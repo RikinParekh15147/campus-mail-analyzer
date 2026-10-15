@@ -1,0 +1,14 @@
+.venv/
+node_modules/
+desktop/dist/
+desktop/release/
+__pycache__/
+.pytest_cache/
+.coverage
+dataset/
+runtime/
+artifacts/
+*.egg-info/
+.env
+credentials*.json
+
