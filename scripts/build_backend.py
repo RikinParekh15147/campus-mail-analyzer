@@ -25,6 +25,8 @@ args = [
     "sklearn",
     "--collect-submodules",
     "keyring.backends",
+    "--collect-submodules",
+    "scipy._external.array_api_compat.numpy",
     "--hidden-import",
     "uvicorn.logging",
     "--hidden-import",
@@ -39,6 +41,10 @@ args = [
     "tkinter",
     "--add-data",
     str(root / "artifacts/models") + ":artifacts/models",
+    "--add-data",
+    str(root / "prompts") + ":prompts",
+    "--add-data",
+    str(root / "schemas") + ":schemas",
     str(root / "scripts/backend_entry.py"),
 ]
 subprocess.run(args, cwd=root, check=True)

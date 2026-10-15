@@ -70,7 +70,22 @@ def main():
                     },
                     timeout=60,
                 )
-                notice.raise_for_status()
+                if not notice.ok:
+                    raise RuntimeError(
+                        f"Frozen ingestion failed ({notice.status_code}): "
+                        + notice.text
+                        + "\n"
+                        + log.read_text()[-8000:]
+                    )
+                assert (
+                    notice.json()["analysis"]["classification_method"]
+                    == "self_trained_pipeline"
+                )
+                prompt = requests.get(
+                    base + "/prompts/timetable", headers=headers, timeout=10
+                )
+                prompt.raise_for_status()
+                assert "student_context" in prompt.json()["schema"]["properties"]
                 tasks = requests.get(
                     base + "/records/assignment", headers=headers, timeout=10
                 ).json()
@@ -117,6 +132,8 @@ def main():
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+                if log.stat().st_size:
+                    print(log.read_text()[-8000:])
 
 
 if __name__ == "__main__":

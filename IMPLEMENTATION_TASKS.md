@@ -11,6 +11,6 @@ Work rule: write behavioral tests for each phase, run them failing, implement, t
 - [x] Phase 6 — conversations/marks: request state, sent-reply resolution, exact verified identity matching, assessment revision tracking.
 - [x] Phase 7 — reminders/briefings: durable in-app delivery, date changes/cancellations, daily/live/weekly source-linked summaries and optional grounded API enhancement.
 - [x] Phase 8 — optional external calendar: separate authorization, provider IDs, external busy intervals, incremental sync and managed-calendar writes without duplication.
-- [ ] Phase 9 — complete desktop integration: polished Electron interface for every module, secure preload, Python supervision, persistent worker/scheduler, install/build checks, full-workflow tests and setup documentation. Reconcile every agreed feature against an explicit coverage matrix.
+- [x] Phase 9 — complete desktop integration: polished Electron interface for every module, secure preload, Python supervision, persistent worker/scheduler, install/build checks, full-workflow tests and setup documentation. Reconciled every agreed feature against an explicit coverage matrix.
 
 Datasets remain private and out of source control. Unknown-license public documents remain quarantined. Imported weak labels are not gold evaluation labels. The final coverage matrix must distinguish working local features, credential-dependent adapters, and limitations.

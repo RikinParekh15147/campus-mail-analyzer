@@ -6,8 +6,10 @@ test("desktop provides a real isolated Python workflow", async () => {
   test.setTimeout(120000);
   const data = await fs.mkdtemp(path.join(os.tmpdir(), "campus-desktop-"));
   const root = path.resolve(__dirname, "../..");
+  const executablePath = process.env.CAMPUS_PACKAGED_EXECUTABLE;
   const desktop = await _electron.launch({
-    args: [path.join(root, "desktop")],
+    ...(executablePath ? { executablePath } : {}),
+    args: executablePath ? [] : [path.join(root, "desktop")],
     env: {
       ...process.env,
       CAMPUS_DATA_DIR: data,
@@ -54,27 +56,48 @@ test("desktop provides a real isolated Python workflow", async () => {
     await page.getByRole("dialog").locator("textarea").fill("23BIT044 8/10");
     await page.getByRole("button", { name: "Find my result" }).click();
     await expect(page.getByText("8 / 10", { exact: true })).toBeVisible();
-    await page.locator('.nav-item').filter({hasText:'Calendar'}).click();
-    const localToday=(await page.evaluate(()=>window.campus.request('/summary'))).date;
-    const shifted=(n)=>{const d=new Date(localToday+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return d.toISOString().slice(0,10);};
-    const classDay=shifted(2);
-    const weekday=(new Date(classDay+'T12:00:00Z').getUTCDay()+6)%7;
-    await page.getByRole('button',{name:'Import timetable'}).click();
-    const schedule={schema_version:'1.0',timezone:'Asia/Kolkata',student_context:{batch:'B'},term_start:localToday,term_end:shifted(90),sessions:[{course:'NLP201',weekday,start:'09:00',end:'10:00',batch:'B'}]};
-    await page.getByPlaceholder('Paste schema-valid JSON…').fill(JSON.stringify(schedule));
-    await page.getByRole('button',{name:'Validate & preview'}).click();
-    await expect(page.locator('.import-preview')).toContainText('NLP201');
-    await page.getByRole('button',{name:'Confirm and activate'}).click();
-    await page.getByRole('button',{name:'Plan a block'}).click();
-    await page.getByLabel('What are you planning?').fill('Study NLP201');
-    await page.getByLabel('Start',{exact:true}).fill(classDay+'T09:00');
-    await page.getByLabel('End',{exact:true}).fill(classDay+'T10:00');
-    await page.getByRole('button',{name:'Add personal block'}).click();
-    await expect(page.locator('.conflict-card')).toContainText('Study NLP201');
-    await page.getByRole('button',{name:'Suggest another slot'}).click();
-    await expect(page.getByRole('dialog')).toContainText('Nothing has moved yet');
-    await page.getByRole('button',{name:'Approve this change'}).click();
-    await expect(page.locator('.quiet-state')).toContainText('No known conflicts');
+    await page.locator(".nav-item").filter({ hasText: "Calendar" }).click();
+    const localToday = (
+      await page.evaluate(() => window.campus.request("/summary"))
+    ).date;
+    const shifted = (n) => {
+      const d = new Date(localToday + "T12:00:00Z");
+      d.setUTCDate(d.getUTCDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const classDay = shifted(2);
+    const weekday = (new Date(classDay + "T12:00:00Z").getUTCDay() + 6) % 7;
+    await page.getByRole("button", { name: "Import timetable" }).click();
+    const schedule = {
+      schema_version: "1.0",
+      timezone: "Asia/Kolkata",
+      student_context: { batch: "B" },
+      term_start: localToday,
+      term_end: shifted(90),
+      sessions: [
+        { course: "NLP201", weekday, start: "09:00", end: "10:00", batch: "B" },
+      ],
+    };
+    await page
+      .getByPlaceholder("Paste schema-valid JSON…")
+      .fill(JSON.stringify(schedule));
+    await page.getByRole("button", { name: "Validate & preview" }).click();
+    await expect(page.locator(".import-preview")).toContainText("NLP201");
+    await page.getByRole("button", { name: "Confirm and activate" }).click();
+    await page.getByRole("button", { name: "Plan a block" }).click();
+    await page.getByLabel("What are you planning?").fill("Study NLP201");
+    await page.getByLabel("Start", { exact: true }).fill(classDay + "T09:00");
+    await page.getByLabel("End", { exact: true }).fill(classDay + "T10:00");
+    await page.getByRole("button", { name: "Add personal block" }).click();
+    await expect(page.locator(".conflict-card")).toContainText("Study NLP201");
+    await page.getByRole("button", { name: "Suggest another slot" }).click();
+    await expect(page.getByRole("dialog")).toContainText(
+      "Nothing has moved yet",
+    );
+    await page.getByRole("button", { name: "Approve this change" }).click();
+    await expect(page.locator(".quiet-state")).toContainText(
+      "No known conflicts",
+    );
     for (const screen of [
       "Calendar",
       "Events",

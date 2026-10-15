@@ -125,6 +125,8 @@ Build for the operating system on which the build command runs; Windows installe
 npm --prefix desktop run package
 ```
 
+Verify the standalone Python runtime with `.venv/bin/python scripts/smoke_sidecar.py`. The desktop workflow can also run against the unpacked executable: set `CAMPUS_PACKAGED_EXECUTABLE` to its absolute path before running the Playwright command above. Both checks use temporary profiles.
+
 The Python sidecar bundles application code and trained model artifacts, never the mail dataset, runtime profile database, attachments or credentials. `desktop/release/` contains the unpacked desktop build. Installers/code signing and testing on other operating systems are separate distribution steps. Models must exist before packaging; build dependencies and compiled libraries are platform-specific.
 
 Closing the application stops its backend. Syncing and in-app reminders run while it is open and catch up when reopened; delivery while the machine is off is not supported. Scanned images/PDFs need an optional OCR adapter. Complex layouts and ambiguous language go to review. Automatic mail drafting/sending, Drive downloads, and external notification channels are outside the agreed initial release.

@@ -32,6 +32,9 @@ Each phase's tests were written and run failing on its missing module before imp
 - Real Electron/real Python workflow passed: profile creation, notice analysis, identity confirmation, marks extraction, timetable preview/activation, actual conflicting work block, suggested move and explicit approval, plus navigation through all screens.
 - Python source has been formatted and checked for undefined names. Research extraction agreement and classifier reports are saved in `reports/PRELIMINARY_RESULTS.md`; no human-reviewed gold scores are claimed.
 - Source development app runs with the private My campus profile seeded from 50 existing scoped records.
-- Standalone sidecar and unpacked desktop distribution are being verified against clean temporary profiles. Windows-native/signing and live Google/paid-provider checks are not claimed from this Linux/WSL environment.
+- Final Python suite: **69 passed**; undefined-name/syntax lint passed. Desktop bridge security suite: **2 passed**. Production frontend build passed.
+- Standalone frozen Python smoke check passed against a clean temporary profile, including actual trained inference, exact deadline time, local timezone, prompt schema, ambiguous marks abstention and dashboard access. This check caught SciPy's dynamically imported compatibility module; the build recipe now explicitly collects it.
+- Linux unpacked Electron distribution built successfully. The full real-desktop workflow also passed against the **packaged executable** (1 test, 19.3 seconds), covering notice analysis, identity/marks, timetable activation, conflict proposal/approval and every screen. Build outputs stay ignored.
+- Latest development app restarted with the existing private profile. Windows-native/signing and live Google/paid-provider checks are not claimed from this Linux/WSL environment.
 
 See `FEATURE_COVERAGE.md` for every requirement, implementation boundary and deferred/external prerequisite.
