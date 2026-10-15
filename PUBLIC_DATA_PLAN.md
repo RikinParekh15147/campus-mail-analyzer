@@ -20,7 +20,7 @@ Appropriate use: train/compare TF-IDF + Naive Bayes and linear SVM for sentence 
 
 Limitations: corporate domain; sentence/phrase examples, not full conversations; positive intent does not mean a reply is currently outstanding; source assumptions omit certain attachment/CC relevance and are not identical to our application's rules. Do not map the binary label directly to all academic categories or reply-state labels.
 
-Local data: `research/public_data/raw/charlie9_verified/` and `research/public_data/normalized/charlie9_verified.jsonl`.
+Local data: `dataset/public/raw/charlie9_verified/` and `dataset/public/normalized/charlie9_verified.jsonl`.
 
 ## 2. Original source / alternative baseline: Parakweet
 
@@ -34,7 +34,7 @@ Downloaded TXT resources and retained source README/LICENSE:
 
 Measured overlap with Charlie9: 3,644 distinct normalized texts. These datasets are alternative annotations of substantially overlapping examples, not independent datasets. Do not train on one and claim evaluation on the other is held out. If comparing annotation schemes, define one split over their combined duplicate groups first and evaluate each scheme explicitly.
 
-Local data: `research/public_data/raw/parakweet/` and `research/public_data/normalized/parakweet.jsonl`. Original train/test assignment is preserved in the normalized records. Additional near-duplicate/template checks are needed before final model evaluation.
+Local data: `dataset/public/raw/parakweet/` and `dataset/public/normalized/parakweet.jsonl`. Original train/test assignment is preserved in the normalized records. Additional near-duplicate/template checks are needed before final model evaluation.
 
 ## 3. University corpus candidate: Durg University notices
 
@@ -43,7 +43,7 @@ Sources:
 - [University PDF archive dataset](https://huggingface.co/datasets/sameerbanchhor/durg-university-notices)
 - [Metadata file inspected](https://huggingface.co/datasets/sameerbanchhor/DURG-UV-NOTICES/resolve/main/structured_data.json)
 
-Initial inspection downloaded the approximately 1.46 MB catalogue. Subsequent authorized acquisition downloaded the preserved 2.79 GB PDF archive and verified its publisher SHA-256. Acquisition outputs and sample details are recorded in `research/public_data/DOWNLOAD_REPORT.md`. The catalogue has 2,476 records containing titles, PDF URLs, publication dates, language tags, categories and some course/subject metadata.
+Initial inspection downloaded the approximately 1.46 MB catalogue. Subsequent authorized acquisition downloaded the preserved 2.79 GB PDF archive and verified its publisher SHA-256. Acquisition outputs and sample details are recorded in `dataset/public/DOWNLOAD_REPORT.md`. The catalogue has 2,476 records containing titles, PDF URLs, publication dates, language tags, categories and some course/subject metadata.
 
 Actual catalogue category counts:
 
@@ -64,7 +64,7 @@ The inspected Hugging Face metadata provides no dataset card/license, and catego
 
 If usage/provenance are established, inspect a small English-tagged PDF sample, count readable vs scanned documents, verify titles against actual bodies, and annotate under our taxonomy. Category mapping requires review: e.g., Time Table may relate to examinations or classes; Result often belongs to examinations; generic Notification cannot be mapped without its body. Exclude Hindi/mixed content from the English baseline unless readable English content is separately identified. Results dominate, so avoid letting this source overwhelm minority classes. Do not confuse the 2,476 metadata entries with the separate PDF archive's advertised 2,376 rows; coverage differs and requires reconciliation.
 
-Local catalogue: `research/public_data/quarantine/durg_notice_catalogue.json`.
+Local catalogue: `dataset/public/quarantine/durg_notice_catalogue.json`.
 
 ## 4. Best primary academic material: official institutional sources
 
@@ -110,7 +110,7 @@ Use separate datasets/tasks:
 
 ## 7. Acquisition outputs and validation
 
-Saved raw source resources, README/LICENSE files, normalized sentence JSONL, and `research/public_data/manifest.json` with URLs, byte counts, hashes, actual label counts and license/provenance notes.
+Saved raw source resources, README/LICENSE files, normalized sentence JSONL, and `dataset/public/manifest.json` with URLs, byte counts, hashes, actual label counts and license/provenance notes.
 
 Normalization preserves source file/line, original split where present, task identity and normalized duplicate-group hashes. Labels were imported from sources, not AI-reinvented. `human_reviewed_by_project` is false. No public material was merged with private Gmail data and no trained model/performance claim was generated.
 

@@ -1,0 +1,89 @@
+Interpret my holiday list. Clarify the academic year, campus/batch applicability, date ranges and whether classes are suspended. Do not infer that independently scheduled exams or events are cancelled. Show the interpreted list for confirmation.
+Ask every necessary clarification before issuing final JSON. Once choices are resolved, output only JSON matching the supplied schema, without Markdown fences. Represent unsupported rotation patterns as explicit dated exceptions only after confirming them. Never claim ambiguity is resolved by inventing a value.
+
+{
+  "$defs": {
+    "Holiday": {
+      "properties": {
+        "date": {
+          "format": "date",
+          "title": "Date",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "classes_suspended": {
+          "default": true,
+          "title": "Classes Suspended",
+          "type": "boolean"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        },
+        "batches": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Batches",
+          "type": "array"
+        }
+      },
+      "required": [
+        "date",
+        "name"
+      ],
+      "title": "Holiday",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "type": "string"
+    },
+    "academic_year": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Academic Year"
+    },
+    "holidays": {
+      "items": {
+        "$ref": "#/$defs/Holiday"
+      },
+      "title": "Holidays",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "timezone",
+    "holidays"
+  ],
+  "title": "Holidays",
+  "type": "object"
+}

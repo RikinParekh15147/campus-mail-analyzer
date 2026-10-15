@@ -1,0 +1,115 @@
+Interpret my personal weekly timetable. It may combine multiple batches, sections, electives and lab groups. Ask which apply to me. Ask about unreadable entries, AM/PM, timezone, term dates, overlaps and week rotations. Never combine alternatives or guess missing values. Show the interpreted personal schedule for confirmation before final output.
+Ask every necessary clarification before issuing final JSON. Once choices are resolved, output only JSON matching the supplied schema, without Markdown fences. Represent unsupported rotation patterns as explicit dated exceptions only after confirming them. Never claim ambiguity is resolved by inventing a value.
+
+{
+  "$defs": {
+    "Session": {
+      "additionalProperties": false,
+      "properties": {
+        "course": {
+          "title": "Course",
+          "type": "string"
+        },
+        "weekday": {
+          "maximum": 6,
+          "minimum": 0,
+          "title": "Weekday",
+          "type": "integer"
+        },
+        "start": {
+          "format": "time",
+          "title": "Start",
+          "type": "string"
+        },
+        "end": {
+          "format": "time",
+          "title": "End",
+          "type": "string"
+        },
+        "batch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Batch"
+        },
+        "location": {
+          "default": "",
+          "title": "Location",
+          "type": "string"
+        },
+        "instructor": {
+          "default": "",
+          "title": "Instructor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "course",
+        "weekday",
+        "start",
+        "end"
+      ],
+      "title": "Session",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "type": "string"
+    },
+    "student_context": {
+      "additionalProperties": true,
+      "title": "Student Context",
+      "type": "object"
+    },
+    "term_start": {
+      "format": "date",
+      "title": "Term Start",
+      "type": "string"
+    },
+    "term_end": {
+      "format": "date",
+      "title": "Term End",
+      "type": "string"
+    },
+    "sessions": {
+      "items": {
+        "$ref": "#/$defs/Session"
+      },
+      "title": "Sessions",
+      "type": "array"
+    },
+    "exceptions": {
+      "default": [],
+      "items": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Exceptions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "timezone",
+    "student_context",
+    "term_start",
+    "term_end",
+    "sessions"
+  ],
+  "title": "Timetable",
+  "type": "object"
+}

@@ -1,14 +1,26 @@
 .venv/
+.venv-win/
 node_modules/
 desktop/dist/
 desktop/release/
 __pycache__/
 .pytest_cache/
 .coverage
-dataset/
+/dataset/*
+!/dataset/README.md
+!/dataset/tools/
 runtime/
 artifacts/
 *.egg-info/
 .env
 credentials*.json
 
+
+/desktop/test-results/
+/desktop/playwright-report/
+/build/
+/dist/
+*.spec
+
+/mail_dataset/
+/research/

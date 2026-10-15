@@ -1,0 +1,86 @@
+{
+  "$defs": {
+    "Holiday": {
+      "properties": {
+        "date": {
+          "format": "date",
+          "title": "Date",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "classes_suspended": {
+          "default": true,
+          "title": "Classes Suspended",
+          "type": "boolean"
+        },
+        "end_date": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Date"
+        },
+        "batches": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Batches",
+          "type": "array"
+        }
+      },
+      "required": [
+        "date",
+        "name"
+      ],
+      "title": "Holiday",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "timezone": {
+      "title": "Timezone",
+      "type": "string"
+    },
+    "academic_year": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Academic Year"
+    },
+    "holidays": {
+      "items": {
+        "$ref": "#/$defs/Holiday"
+      },
+      "title": "Holidays",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "timezone",
+    "holidays"
+  ],
+  "title": "Holidays",
+  "type": "object"
+}
