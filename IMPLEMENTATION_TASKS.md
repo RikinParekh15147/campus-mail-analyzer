@@ -1,5 +1,7 @@
 # Implementation phases and acceptance gates
 
+The checklist below records the original feature implementation. The next end-to-end ML quality work is tracked separately in [ML_IMPROVEMENT_TASKS.md](ML_IMPROVEMENT_TASKS.md), based on [ML_ROBUSTNESS_PLAN.md](ML_ROBUSTNESS_PLAN.md).
+
 Work rule: write behavioral tests for each phase, run them failing, implement, then run the phase tests and existing suite. Record actual results in `BUILD_PROGRESS.md`. Gmail/Calendar production credentials are external setup, not fake connected states.
 
 - [x] Phase 0 — foundation and dataset consolidation: preserve existing data under `dataset/mail` and `dataset/public`; typed models; SQLite account isolation; Python API scaffold.

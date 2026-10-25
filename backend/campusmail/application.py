@@ -4,7 +4,6 @@ import base64
 import hashlib
 import json
 import re
-import sys
 from .store import Store
 from .engine import Engine
 from .personalization import Personalizer
@@ -16,11 +15,7 @@ from .ingestion import import_dataset, GmailSync
 from .google import GoogleConnection, GoogleHTTP
 from .external_calendar import CalendarSync
 
-PROJECT = (
-    Path(sys._MEIPASS)
-    if getattr(sys, "frozen", False)
-    else Path(__file__).resolve().parents[2]
-)
+from .paths import PROJECT
 
 
 class Application:
@@ -158,25 +153,34 @@ class Application:
             self.process(owner, self.store.get(owner, resource["analysis_message_id"]))
         return resource
 
-    def dataset_path(self, collection):
-        choices = {
-            "scoped": self.project
-            / "dataset/mail/scoped_run/sanitized/documents.jsonl",
-            "broad": self.project / "dataset/mail/sanitized/documents.jsonl",
-        }
-        if collection not in choices:
+    def dataset_collection(self, collection):
+        manifest = json.loads((self.project / "dataset_collections.json").read_text())
+        if collection not in manifest:
             raise ValueError("Unknown dataset collection")
-        if not choices[collection].is_file():
+        entry = manifest[collection]
+        relative = Path(entry["relative_path"])
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("Dataset collection path must stay inside the project")
+        path = (self.project / relative).resolve()
+        if not path.is_relative_to(self.project.resolve()):
+            raise ValueError("Dataset collection path must stay inside the project")
+        if not path.is_file():
             raise ValueError("Dataset is not installed")
-        return choices[collection]
+        return path, entry["dataset_id"]
+
+    def dataset_path(self, collection):
+        return self.dataset_collection(collection)[0]
 
     def import_collection(self, owner, payload):
+        collection = payload.get("collection", "scoped")
+        path, dataset_id = self.dataset_collection(collection)
         return import_dataset(
             self.store,
             owner,
-            self.dataset_path(payload.get("collection", "scoped")),
+            path,
             self.process,
             payload.get("limit"),
+            dataset_id=dataset_id,
         )
 
     def gmail_sync(self, owner, payload):

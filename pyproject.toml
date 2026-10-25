@@ -7,7 +7,7 @@ name = "campus-mail-analyser"
 version = "0.1.0"
 description = "Local academic mail assistant with evidence-backed analysis"
 requires-python = ">=3.11"
-dependencies = ["fastapi==0.121.0", "uvicorn==0.38.0", "pydantic==2.12.5", "scikit-learn==1.7.2", "pypdf==6.2.0", "python-docx==1.2.0", "openpyxl==3.1.5", "requests==2.32.5", "httpx==0.28.1", "google-auth-oauthlib==1.2.3", "keyring==25.6.0", "python-multipart==0.0.20"]
+dependencies = ["fastapi==0.121.0", "uvicorn==0.38.0", "pydantic==2.12.5", "scikit-learn==1.7.2", "pypdf==6.2.0", "python-docx==1.2.0", "openpyxl==3.1.5", "requests==2.32.5", "httpx==0.28.1", "google-auth-oauthlib==1.2.3", "keyring==25.6.0", "python-multipart==0.0.20", "packaging==26.3", "tzdata==2026.5"]
 
 [project.optional-dependencies]
 dev = ["pytest==8.4.2", "pytest-cov==7.0.0"]
@@ -21,4 +21,5 @@ where = ["backend"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["backend"]
+markers = ["research: requires separately installed private research inputs (--run-research)"]
 

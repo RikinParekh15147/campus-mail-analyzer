@@ -1,0 +1,10 @@
+{
+  "scoped": {
+    "dataset_id": "campus-mail-scoped-v1",
+    "relative_path": "dataset/mail/scoped_run/sanitized/documents.jsonl"
+  },
+  "broad": {
+    "dataset_id": "campus-mail-broad-v1",
+    "relative_path": "dataset/mail/sanitized/documents.jsonl"
+  }
+}

@@ -1,0 +1,911 @@
+{
+  "$defs": {
+    "ActionAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "actor": {
+          "enum": [
+            "student",
+            "sender",
+            "recipient",
+            "broadcast",
+            "other",
+            "unknown"
+          ],
+          "title": "Actor",
+          "type": "string"
+        },
+        "action_type": {
+          "enum": [
+            "submit",
+            "register",
+            "attend",
+            "reply",
+            "upload",
+            "apply",
+            "read",
+            "pay",
+            "bring",
+            "complete",
+            "other",
+            "unknown"
+          ],
+          "title": "Action Type",
+          "type": "string"
+        },
+        "action_status": {
+          "enum": [
+            "required",
+            "optional",
+            "completed",
+            "negated",
+            "uncertain"
+          ],
+          "title": "Action Status",
+          "type": "string"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "needs_review": {
+          "default": false,
+          "title": "Needs Review",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evidence",
+        "actor",
+        "action_type",
+        "action_status"
+      ],
+      "title": "ActionAnnotation",
+      "type": "object"
+    },
+    "AnnotationStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "completeness": {
+          "default": "unannotated",
+          "enum": [
+            "unannotated",
+            "partial",
+            "complete"
+          ],
+          "title": "Completeness",
+          "type": "string"
+        },
+        "provenance": {
+          "default": "unlabeled",
+          "enum": [
+            "unlabeled",
+            "source",
+            "weak",
+            "ai_generated",
+            "human_reviewed",
+            "synthetic"
+          ],
+          "title": "Provenance",
+          "type": "string"
+        },
+        "reviewer_ids": {
+          "items": {
+            "maxLength": 256,
+            "minLength": 1,
+            "pattern": "^\\S(?:.*\\S)?$",
+            "type": "string"
+          },
+          "title": "Reviewer Ids",
+          "type": "array"
+        },
+        "adjudication": {
+          "default": "not_required",
+          "enum": [
+            "not_required",
+            "pending",
+            "resolved"
+          ],
+          "title": "Adjudication",
+          "type": "string"
+        },
+        "adjudicator_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Adjudicator Id"
+        }
+      },
+      "title": "AnnotationStatus",
+      "type": "object"
+    },
+    "AnnotationStatuses": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "$ref": "#/$defs/AnnotationStatus"
+        },
+        "dates": {
+          "$ref": "#/$defs/AnnotationStatus"
+        },
+        "actions": {
+          "$ref": "#/$defs/AnnotationStatus"
+        },
+        "entities": {
+          "$ref": "#/$defs/AnnotationStatus"
+        },
+        "relationships": {
+          "$ref": "#/$defs/AnnotationStatus"
+        },
+        "reply_state": {
+          "$ref": "#/$defs/AnnotationStatus"
+        }
+      },
+      "title": "AnnotationStatuses",
+      "type": "object"
+    },
+    "DateAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence": {
+          "$ref": "#/$defs/Evidence"
+        },
+        "role": {
+          "enum": [
+            "assignment_deadline",
+            "registration_deadline",
+            "event_start",
+            "event_end",
+            "exam_date",
+            "publication_date",
+            "other",
+            "unknown"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "normalized_value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Normalized Value"
+        },
+        "precision": {
+          "default": "date",
+          "enum": [
+            "date",
+            "datetime"
+          ],
+          "title": "Precision",
+          "type": "string"
+        },
+        "timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timezone"
+        },
+        "reference_date": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reference Date"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "needs_review": {
+          "default": false,
+          "title": "Needs Review",
+          "type": "boolean"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "evidence",
+        "role"
+      ],
+      "title": "DateAnnotation",
+      "type": "object"
+    },
+    "EntityAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Entity Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "course",
+            "assignment",
+            "event",
+            "meeting",
+            "assessment_result",
+            "resource"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "evidence_spans": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1,
+          "title": "Evidence Spans",
+          "type": "array"
+        },
+        "attributes": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Attributes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "entity_id",
+        "type",
+        "evidence_spans"
+      ],
+      "title": "EntityAnnotation",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "field": {
+          "default": "text",
+          "enum": [
+            "text",
+            "subject"
+          ],
+          "title": "Field",
+          "type": "string"
+        },
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "locator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Locator"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "text"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "Locator": {
+      "additionalProperties": false,
+      "properties": {
+        "page": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Page"
+        },
+        "sheet": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sheet"
+        },
+        "row": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Row"
+        },
+        "cell": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cell"
+        }
+      },
+      "title": "Locator",
+      "type": "object"
+    },
+    "OffsetMapping": {
+      "additionalProperties": false,
+      "description": "Map canonical body text back to optional original_text.",
+      "properties": {
+        "start": {
+          "minimum": 0,
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "exclusiveMinimum": 0,
+          "title": "End",
+          "type": "integer"
+        },
+        "original_start": {
+          "minimum": 0,
+          "title": "Original Start",
+          "type": "integer"
+        },
+        "original_end": {
+          "exclusiveMinimum": 0,
+          "title": "Original End",
+          "type": "integer"
+        },
+        "transformation": {
+          "default": "exact",
+          "enum": [
+            "exact",
+            "normalized"
+          ],
+          "title": "Transformation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "original_start",
+        "original_end"
+      ],
+      "title": "OffsetMapping",
+      "type": "object"
+    },
+    "RelationshipAnnotation": {
+      "additionalProperties": false,
+      "properties": {
+        "relationship_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Relationship Id",
+          "type": "string"
+        },
+        "target_document_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Target Document Id",
+          "type": "string"
+        },
+        "source_entity_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Entity Id"
+        },
+        "target_entity_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Entity Id"
+        },
+        "type": {
+          "enum": [
+            "supports",
+            "same_event",
+            "same_assignment",
+            "updates",
+            "cancels",
+            "corrects",
+            "exact_duplicate",
+            "candidate_supersedes"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "evidence_spans": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "minItems": 1,
+          "title": "Evidence Spans",
+          "type": "array"
+        },
+        "needs_review": {
+          "default": false,
+          "title": "Needs Review",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "relationship_id",
+        "target_document_id",
+        "type",
+        "evidence_spans"
+      ],
+      "title": "RelationshipAnnotation",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "2.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "dataset_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "document_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$",
+      "title": "Document Id",
+      "type": "string"
+    },
+    "task": {
+      "enum": [
+        "academic",
+        "actionability"
+      ],
+      "title": "Task",
+      "type": "string"
+    },
+    "data_origin": {
+      "enum": [
+        "designated_research",
+        "public",
+        "synthetic"
+      ],
+      "title": "Data Origin",
+      "type": "string"
+    },
+    "source_type": {
+      "maxLength": 256,
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$",
+      "title": "Source Type",
+      "type": "string"
+    },
+    "usage_status": {
+      "default": "unverified",
+      "enum": [
+        "unverified",
+        "permitted",
+        "quarantined"
+      ],
+      "title": "Usage Status",
+      "type": "string"
+    },
+    "source_metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Source Metadata",
+      "type": "object"
+    },
+    "subject": {
+      "default": "",
+      "maxLength": 10000,
+      "title": "Subject",
+      "type": "string"
+    },
+    "text": {
+      "maxLength": 2000000,
+      "minLength": 1,
+      "title": "Text",
+      "type": "string"
+    },
+    "original_text": {
+      "anyOf": [
+        {
+          "maxLength": 2000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Original Text"
+    },
+    "offset_map": {
+      "items": {
+        "$ref": "#/$defs/OffsetMapping"
+      },
+      "title": "Offset Map",
+      "type": "array"
+    },
+    "sent_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sent At"
+    },
+    "timezone": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Timezone"
+    },
+    "context_cutoff_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Context Cutoff At"
+    },
+    "context_document_ids": {
+      "items": {
+        "maxLength": 256,
+        "minLength": 1,
+        "pattern": "^\\S(?:.*\\S)?$",
+        "type": "string"
+      },
+      "title": "Context Document Ids",
+      "type": "array"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thread Id"
+    },
+    "parent_document_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Document Id"
+    },
+    "duplicate_group_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duplicate Group Id"
+    },
+    "template_group_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Template Group Id"
+    },
+    "leakage_group_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Leakage Group Id"
+    },
+    "update_family_id": {
+      "anyOf": [
+        {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Update Family Id"
+    },
+    "primary_category": {
+      "anyOf": [
+        {
+          "enum": [
+            "examinations",
+            "assignments",
+            "workshops_events",
+            "placements",
+            "scholarships",
+            "administration",
+            "course_materials",
+            "nonacademic_other"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Primary Category"
+    },
+    "secondary_categories": {
+      "items": {
+        "enum": [
+          "examinations",
+          "assignments",
+          "workshops_events",
+          "placements",
+          "scholarships",
+          "administration",
+          "course_materials",
+          "nonacademic_other"
+        ],
+        "type": "string"
+      },
+      "title": "Secondary Categories",
+      "type": "array"
+    },
+    "secondary_categories_complete": {
+      "default": false,
+      "title": "Secondary Categories Complete",
+      "type": "boolean"
+    },
+    "actionability_label": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actionability Label"
+    },
+    "annotation_status": {
+      "$ref": "#/$defs/AnnotationStatuses"
+    },
+    "dates": {
+      "items": {
+        "$ref": "#/$defs/DateAnnotation"
+      },
+      "title": "Dates",
+      "type": "array"
+    },
+    "actions": {
+      "items": {
+        "$ref": "#/$defs/ActionAnnotation"
+      },
+      "title": "Actions",
+      "type": "array"
+    },
+    "entities": {
+      "items": {
+        "$ref": "#/$defs/EntityAnnotation"
+      },
+      "title": "Entities",
+      "type": "array"
+    },
+    "relationships": {
+      "items": {
+        "$ref": "#/$defs/RelationshipAnnotation"
+      },
+      "title": "Relationships",
+      "type": "array"
+    },
+    "reply_state": {
+      "anyOf": [
+        {
+          "enum": [
+            "needs_reply",
+            "waiting_for_other",
+            "resolved",
+            "uncertain",
+            "not_applicable"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reply State"
+    }
+  },
+  "required": [
+    "schema_version",
+    "dataset_id",
+    "document_id",
+    "task",
+    "data_origin",
+    "source_type",
+    "text"
+  ],
+  "title": "ResearchDocument",
+  "type": "object"
+}

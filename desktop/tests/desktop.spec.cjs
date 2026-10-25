@@ -13,7 +13,10 @@ test("desktop provides a real isolated Python workflow", async () => {
     env: {
       ...process.env,
       CAMPUS_DATA_DIR: data,
-      CAMPUS_PYTHON: path.join(root, ".venv/bin/python"),
+      CAMPUS_PYTHON: process.env.CAMPUS_PYTHON || path.join(
+        root,
+        process.platform === "win32" ? ".venv-win/Scripts/python.exe" : ".venv/bin/python",
+      ),
     },
   });
   try {

@@ -2,9 +2,79 @@
 
 A Python-first academic mail assistant with a thin Electron desktop interface. It analyzes notices and readable attachments, maintains evidence-linked academic records, learns personal preferences, and brings calendars, assignments, resources, requests and marks into one workspace.
 
-## Run the current workspace
+## Fresh clone without the private dataset
 
-The Python environment, desktop dependencies and two trained model families have been installed in this workspace. Fifty records from the scoped, anonymized mail collection have been imported into the local **My campus** profile.
+Use Python **3.12** for the shared development environment and Node.js 22 or newer.
+The dataset and trained artifacts are optional for development. A fresh clone runs
+rules-only analysis until trusted model artifacts are installed. Do not copy your
+teammate's Windows virtual environment onto macOS.
+
+macOS/Linux:
+
+```bash
+bash scripts/setup.sh
+.venv/bin/python -m campusmail doctor
+.venv/bin/python -m pytest -q
+npm --prefix desktop start
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\setup.ps1
+.\.venv-win\Scripts\python.exe -m campusmail doctor
+.\.venv-win\Scripts\python.exe -m pytest -q
+npm --prefix desktop start
+```
+
+For backend-only development use `bash scripts/setup.sh --backend-only` or
+`.\scripts\setup.ps1 -BackendOnly`. Set `CAMPUS_SETUP_PYTHON` on macOS/Linux or
+pass `-Python` on Windows to select a Python 3.12 executable. Setup consumes
+`requirements-dev.constraints`; the older Linux lock is a historical snapshot.
+The constraints were resolved on macOS; Windows-only dependencies and the complete
+Windows environment must be verified by the CI matrix, which saves each platform's
+installed versions. This is not a fully hash-locked cross-platform environment.
+
+Default Python tests use temporary data, fake credential storage, blocked external network
+connections and no installed private model bundle. Private-data checks are opt-in:
+
+```bash
+.venv/bin/python -m campusmail doctor --require-datasets
+.venv/bin/python -m pytest --run-research -m research -q
+```
+
+Those commands deliberately fail with missing-input diagnostics when the research
+exports are absent. `doctor` emits JSON and exits nonzero for broken dependencies,
+failed imports, incompatible/invalid model metadata, or explicitly required missing
+datasets. It never opens the credential vault or loads a pickle. Matching model
+metadata is **not** an integrity or prediction-quality check; full artifact
+verification remains a later implementation task.
+
+Implementation status: [ML_IMPROVEMENT_TASKS.md](ML_IMPROVEMENT_TASKS.md).
+
+Research exports can now be checked against the explicit v2 contract without
+changing their contents:
+
+```bash
+.venv/bin/python -m campusmail dataset validate --input tests/fixtures/research_v2.jsonl --report artifacts/verification/research-fixture.json
+```
+
+To convert a designated legacy research export, run `campusmail dataset migrate-v1`
+with explicit input/output paths, dataset ID, task, data origin and source type.
+See [the research schema guide](dataset/RESEARCH_SCHEMA.md) for the command and its
+conservative annotation rules. Operational import identities are declared in
+[dataset_collections.json](dataset_collections.json).
+
+See the [research schema guide](dataset/RESEARCH_SCHEMA.md) for annotation
+completeness, evidence offsets, Windows commands and validation errors. Existing
+v1 exports require an explicit migration; the current training/import behavior
+has not been switched to v2 automatically.
+
+## Original development workspace
+
+The original author's workspace had a Python environment, desktop dependencies,
+two trained model families and fifty imported records in a **My campus** profile.
+These ignored local resources are not included in a fresh clone.
 
 ```bash
 npm --prefix desktop start
@@ -14,7 +84,8 @@ Choose **My campus** on the welcome screen. Settings → Import scoped mail data
 
 ## Fresh development setup
 
-Requires Python 3.11–3.14 and Node.js 22 or newer.
+The reproducible setup scripts target Python 3.12 and Node.js 22 or newer.
+The training/import commands below additionally require the designated datasets.
 
 Linux/WSL:
 

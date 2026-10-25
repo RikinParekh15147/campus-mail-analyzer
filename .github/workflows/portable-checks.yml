@@ -1,0 +1,62 @@
+name: Portable checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Set up macOS
+        if: runner.os == 'macOS'
+        run: bash scripts/setup.sh --backend-only
+      - name: Set up Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/setup.ps1 -Python python -BackendOnly
+      - name: Verify and record macOS environment
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p artifacts/verification
+          git rev-parse HEAD > artifacts/verification/commit.txt
+          .venv/bin/python -m pip freeze > artifacts/verification/freeze.txt
+          .venv/bin/python -m campusmail doctor > artifacts/verification/doctor.json
+          .venv/bin/python -m pytest -q --junitxml=artifacts/verification/pytest.xml
+      - name: Verify and record Windows environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/verification
+          git rev-parse HEAD > artifacts/verification/commit.txt
+          ./.venv-win/Scripts/python.exe -m pip freeze > artifacts/verification/freeze.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.venv-win/Scripts/python.exe -m campusmail doctor > artifacts/verification/doctor.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.venv-win/Scripts/python.exe -m pytest -q --junitxml=artifacts/verification/pytest.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: npm --prefix desktop ci
+      - run: npm --prefix desktop test
+      - run: npm --prefix desktop run build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-${{ matrix.os }}
+          path: artifacts/verification/

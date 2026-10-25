@@ -1,5 +1,11 @@
 # Unified dataset directory
 
+New research-contract tooling: [v2 schema and validation guide](RESEARCH_SCHEMA.md).
+The validator is read-only and requires an explicit v2 export. Legacy exports
+can be converted with the explicit `dataset migrate-v1` command described in the
+schema guide. The operational import collections and their stable IDs are listed
+in [dataset_collections.json](../dataset_collections.json).
+
 All project research inputs are now under this directory. No source records were discarded.
 
 - `mail/`: original personal-mail collection, private originals, anonymized exports and collection utilities. The default academic training source is `mail/scoped_run/sanitized/documents.jsonl` (575 records; unavailable labels are excluded). The broader `mail/sanitized/documents.jsonl` has 8,292 records and is retained as a separate alternative, not merged into the scoped collection.

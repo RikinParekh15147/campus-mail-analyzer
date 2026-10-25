@@ -8,6 +8,7 @@ __pycache__/
 .coverage
 /dataset/*
 !/dataset/README.md
+!/dataset/RESEARCH_SCHEMA.md
 !/dataset/tools/
 runtime/
 artifacts/

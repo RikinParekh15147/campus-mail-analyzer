@@ -45,6 +45,8 @@ args = [
     str(root / "prompts") + ":prompts",
     "--add-data",
     str(root / "schemas") + ":schemas",
+    "--add-data",
+    str(root / "dataset_collections.json") + ":.",
     str(root / "scripts/backend_entry.py"),
 ]
 subprocess.run(args, cwd=root, check=True)

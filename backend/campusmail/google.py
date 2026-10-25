@@ -12,14 +12,19 @@ SCOPES = {
 }
 
 
+def default_vault():
+    """Production vault factory; tests replace this with an isolated in-memory vault."""
+    import keyring
+
+    return keyring
+
+
 class GoogleConnection:
     def __init__(self, owner, service, vault=None):
         if service not in SCOPES:
             raise ValueError("Unsupported Google service")
         if vault is None:
-            import keyring
-
-            vault = keyring
+            vault = default_vault()
         self.owner, self.service, self.vault = owner, service, vault
         self.key = owner + ":" + service
 

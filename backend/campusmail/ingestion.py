@@ -5,6 +5,7 @@ from email.utils import getaddresses
 from urllib.parse import quote
 import hashlib
 import json
+import re
 from pathlib import Path
 from .documents import VisibleText
 from .models import CATEGORIES
@@ -77,39 +78,72 @@ def parse_message(raw):
     }
 
 
-def import_dataset(store, owner, path, on_message=None, limit=None):
+def _dataset_source_key(dataset_id, document_id):
+    """A path-independent, unambiguous key for an operational import."""
+    if not isinstance(dataset_id, str) or not re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", dataset_id
+    ):
+        raise ValueError("A stable dataset_id is required for import")
+    if not isinstance(document_id, str) or not document_id.strip():
+        raise ValueError("Every imported record needs a document_id")
+    identity = json.dumps([dataset_id, document_id], ensure_ascii=False)
+    return "dataset:v2:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def import_dataset(store, owner, path, on_message=None, limit=None, *, dataset_id):
     path = Path(path)
-    namespace = hashlib.sha256(str(path.resolve()).encode()).hexdigest()[:12]
+    _dataset_source_key(dataset_id, "preflight")
+    if limit is not None and (not isinstance(limit, int) or limit < 1):
+        raise ValueError("Import limit must be a positive integer")
     count = 0
-    for line in path.read_text(encoding="utf-8").splitlines():
-        row = json.loads(line)
-        if not row.get("text", "").strip():
-            continue
-        category = row.get("primary_category")
-        payload = {
-            "text": row["text"],
-            "subject": row.get("subject", ""),
-            "sent_at": row.get("sent_at"),
-            "thread_id": row.get("thread_id"),
-            "source_category": category if category in CATEGORIES else None,
-            "label_provenance": row.get("label_provenance", "unknown"),
-            "source_type": row.get("source_type"),
-            "sanitized": True,
-            "source_metadata": row.get("source_metadata", {}),
-            "imported_resources": row.get("resources", []),
-            "parent_message_id": row.get("parent_message_id"),
-            "original_document_id": row.get("document_id"),
-            "original_message_id": row.get("message_id"),
-            "is_self": row.get("source_metadata", {}).get("sender_is_account", False),
-        }
-        record = store.put(
-            owner, "message", payload, "dataset:" + namespace + ":" + row["document_id"]
-        )
-        if on_message:
-            on_message(owner, record)
-        count += 1
-        if limit and count >= limit:
-            break
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError(f"Import row {line_number} must be an object")
+            if row.get("schema_version") == "2.0":
+                raise ValueError("Research v2 export is not an operational import")
+            if row.get("dataset_id", dataset_id) != dataset_id:
+                raise ValueError(f"Import row {line_number} has a different dataset_id")
+            if not isinstance(row.get("text"), str) or not row["text"].strip():
+                continue
+            source_key = _dataset_source_key(dataset_id, row.get("document_id"))
+            category = row.get("primary_category")
+            metadata = row.get("source_metadata") or {}
+            payload = {
+                "text": row["text"],
+                "subject": row.get("subject", ""),
+                "sent_at": row.get("sent_at"),
+                "thread_id": row.get("thread_id"),
+                "source_category": category if category in CATEGORIES else None,
+                "label_provenance": row.get("label_provenance", "unknown"),
+                "source_type": row.get("source_type"),
+                "sanitized": True,
+                "dataset_id": dataset_id,
+                "source_metadata": metadata,
+                "imported_resources": row.get("resources", []),
+                "parent_message_id": row.get("parent_message_id"),
+                "original_document_id": row.get("document_id"),
+                "original_message_id": row.get("message_id"),
+                "is_self": metadata.get("sender_is_account", False),
+            }
+            for field in (
+                "parent_document_id",
+                "duplicate_group_id",
+                "template_group_id",
+                "leakage_group_id",
+                "update_family_id",
+            ):
+                if field in row:
+                    payload[field] = row[field]
+            record = store.put(owner, "message", payload, source_key)
+            if on_message:
+                on_message(owner, record)
+            count += 1
+            if limit is not None and count >= limit:
+                break
     return count
 
 

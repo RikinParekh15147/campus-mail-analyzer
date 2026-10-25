@@ -1,5 +1,39 @@
 # Build progress
 
+## Stable research import identity and explicit legacy migration — 25 October 2026
+
+Implemented the next DATA-03 increment. Operational JSONL import now streams records
+and uses collection IDs from `dataset_collections.json` with document IDs for stable
+identity across file relocation. Group IDs survive import. An explicit `dataset
+migrate-v1` command converts the known legacy export shape to v2, retains old
+metadata, downgrades inherited labels to partial weak annotations, and atomically
+publishes only after complete v2 validation. The Mac suite has **117 passed, 1
+private research test deselected**. No actual private corpus or Windows run was
+available. Existing stores with path-derived source keys need a separate identity
+migration before reimport; DATA-03 remains open. See
+[DATA-03 implementation report](reports/DATA03_IMPLEMENTATION.md).
+
+## Research contracts and validation — 25 October 2026
+
+Completed DATA-02: typed v2 research schema, per-task annotation completeness,
+evidence/time/reference validation and a read-only streaming JSONL validator/CLI.
+Added 32 targeted tests; full Mac suite now **109 passed, 1 research test deselected**.
+The fabricated example export validates with zero errors and remains explicitly
+synthetic. No real-data validation, training or accuracy improvement is claimed.
+See [research-contract verification](reports/RESEARCH_CONTRACT_IMPLEMENTATION.md).
+
+## ML improvement foundation — 25 October 2026
+
+Implemented portable test isolation, opt-in private-data checks, read-only setup/model
+diagnostics, Python 3.12 setup constraints, platform-aware desktop test paths and a
+Mac/Windows CI matrix. New Mac verification: **77 Python tests passed**, one private
+research test deselected; **2 bridge tests passed**, frontend build passed, and the
+real Electron/Python workflow **passed (1 test)** without datasets or model artifacts.
+The explicit research check fails clearly when inputs are absent. Windows and remote
+CI execution remain pending; no accuracy gain is claimed. See
+[foundation verification](reports/FOUNDATION_IMPLEMENTATION.md) and
+[ML task status](ML_IMPROVEMENT_TASKS.md).
+
 ## Phase 0
 
 - Tests written first in `tests/test_phase0.py`; initial run failed because the repository module did not exist.
