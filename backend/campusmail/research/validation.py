@@ -49,6 +49,7 @@ def validate_jsonl(path, *, max_errors=100, max_line_bytes=16 * 1024 * 1024):
         "physical_lines": 0,
         "schema_valid_records": 0,
         "unique_records": 0,
+        "unavailable_text_records": 0,
         "error_count": 0,
         "errors": [],
         "reviewed_complete_counts": {task: 0 for task in TASKS},
@@ -167,6 +168,9 @@ def validate_jsonl(path, *, max_errors=100, max_line_bytes=16 * 1024 * 1024):
                         error(line, "duplicate_document_id")
                         continue
                     report["unique_records"] += 1
+                    report["unavailable_text_records"] += (
+                        document.text_status == "unavailable"
+                    )
                     sources[document.source_type] += 1
                     origins[document.data_origin] += 1
                     usages[document.usage_status] += 1
@@ -200,6 +204,10 @@ def validate_jsonl(path, *, max_errors=100, max_line_bytes=16 * 1024 * 1024):
                     references.extend(
                         (r.target_document_id, r.target_entity_id, "relationship")
                         for r in document.relationships
+                    )
+                    references.extend(
+                        (r.target_document_id, None, "grouping")
+                        for r in document.grouping_relations
                     )
                     for target, entity, kind in references:
                         db.execute(

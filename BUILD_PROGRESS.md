@@ -1,5 +1,17 @@
 # Build progress
 
+## DATA-01/DATA-03 accepted on the installed corpus — 27 October 2026
+
+Audited all five designated JSONL sources, original asset hashes and the full
+2,376-file notice archive inventory. Published 17,291 v2 records with all source
+counts/relationships retained; unavailable-text records remain context-only.
+Operational import stages/validates before mutation, preserves existing analysis,
+and supports an explicit backup-backed legacy identity migration. Real-file
+relocation/reimport created zero duplicates or revisions across 4,590 usable mail
+records. Tests: **129 portable passed; 130 passed with research checks enabled**.
+DATA-01 and DATA-03 are checked complete; DATA-04 leakage components are next.
+See [measured findings and acceptance evidence](reports/DATA03_CORPUS_ACCEPTANCE.md).
+
 ## Stable research import identity and explicit legacy migration — 25 October 2026
 
 Implemented the next DATA-03 increment. Operational JSONL import now streams records

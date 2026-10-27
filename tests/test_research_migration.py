@@ -74,7 +74,7 @@ def test_invalid_legacy_rows_do_not_publish_or_replace_output(tmp_path):
     )
     report = migrate_v1_jsonl(source, output, **OPTIONS)
     assert report["status"] == "invalid"
-    assert report["v2_validation"]["errors"][0]["code"] == "duplicate_document_id"
+    assert report["errors"][0]["code"] == "duplicate_document_id"
     assert output.read_text() == "existing"
 
 
@@ -104,7 +104,8 @@ def test_migration_refuses_source_overwrite_and_schema_v2(tmp_path):
     except ValueError:
         pass
     report = migrate_v1_jsonl(source, tmp_path / "v2.jsonl", **OPTIONS)
-    assert report["errors"] == [{"line": 1, "code": "unsupported_legacy_record"}]
+    assert report["errors"][0]["line"] == 1
+    assert report["errors"][0]["code"] == "unsupported_legacy_record"
 
 
 def test_migration_cli_produces_valid_export(tmp_path):

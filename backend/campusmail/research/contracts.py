@@ -236,6 +236,14 @@ class RelationshipAnnotation(Contract):
     needs_review: StrictBool = False
 
 
+class GroupingRelation(Contract):
+    """A source-declared grouping edge, not a reviewed semantic annotation."""
+
+    relationship_id: Identifier
+    target_document_id: Identifier
+    type: Identifier
+
+
 class ResearchDocument(Contract):
     schema_version: Literal["2.0"]
     dataset_id: Identifier
@@ -246,7 +254,8 @@ class ResearchDocument(Contract):
     usage_status: Literal["unverified", "permitted", "quarantined"] = "unverified"
     source_metadata: dict[str, JsonValue] = Field(default_factory=dict)
     subject: Annotated[StrictStr, Field(max_length=10_000)] = ""
-    text: Annotated[StrictStr, Field(min_length=1, max_length=2_000_000)]
+    text: Annotated[StrictStr, Field(max_length=2_000_000)]
+    text_status: Literal["available", "unavailable"] = "available"
     original_text: Annotated[StrictStr, Field(max_length=2_000_000)] | None = None
     offset_map: list[OffsetMapping] = Field(default_factory=list)
     sent_at: AwareDatetime | None = None
@@ -259,6 +268,7 @@ class ResearchDocument(Contract):
     template_group_id: Identifier | None = None
     leakage_group_id: Identifier | None = None
     update_family_id: Identifier | None = None
+    grouping_relations: list[GroupingRelation] = Field(default_factory=list)
     primary_category: Category | None = None
     secondary_categories: list[Category] = Field(default_factory=list)
     secondary_categories_complete: StrictBool = False
@@ -296,8 +306,18 @@ class ResearchDocument(Contract):
 
     @model_validator(mode="after")
     def consistent(self):
-        if not self.text.strip():
+        if self.text_status == "available" and not self.text.strip():
             raise ValueError("Canonical text must not be blank")
+        if self.text_status == "unavailable":
+            if self.text.strip():
+                raise ValueError("Unavailable text cannot contain canonical content")
+            if any(
+                getattr(self.annotation_status, task).completeness != "unannotated"
+                for task in TASKS
+            ):
+                raise ValueError(
+                    "Unavailable text is context-only, not labeled ML input"
+                )
         if (
             self.sent_at
             and self.context_cutoff_at
@@ -366,6 +386,12 @@ class ResearchDocument(Contract):
             self.relationships
         ):
             raise ValueError("Relationship IDs must be unique within a document")
+        if len({r.relationship_id for r in self.grouping_relations}) != len(
+            self.grouping_relations
+        ):
+            raise ValueError(
+                "Grouping relationship IDs must be unique within a document"
+            )
         evidence = [item.evidence for item in self.dates + self.actions]
         for item in self.entities + self.relationships:
             evidence.extend(item.evidence_spans)

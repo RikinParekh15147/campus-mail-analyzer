@@ -366,6 +366,40 @@
       "title": "Evidence",
       "type": "object"
     },
+    "GroupingRelation": {
+      "additionalProperties": false,
+      "description": "A source-declared grouping edge, not a reviewed semantic annotation.",
+      "properties": {
+        "relationship_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Relationship Id",
+          "type": "string"
+        },
+        "target_document_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Target Document Id",
+          "type": "string"
+        },
+        "type": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^\\S(?:.*\\S)?$",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "relationship_id",
+        "target_document_id",
+        "type"
+      ],
+      "title": "GroupingRelation",
+      "type": "object"
+    },
     "JsonValue": {},
     "Locator": {
       "additionalProperties": false,
@@ -628,8 +662,16 @@
     },
     "text": {
       "maxLength": 2000000,
-      "minLength": 1,
       "title": "Text",
+      "type": "string"
+    },
+    "text_status": {
+      "default": "available",
+      "enum": [
+        "available",
+        "unavailable"
+      ],
+      "title": "Text Status",
       "type": "string"
     },
     "original_text": {
@@ -789,6 +831,13 @@
       ],
       "default": null,
       "title": "Update Family Id"
+    },
+    "grouping_relations": {
+      "items": {
+        "$ref": "#/$defs/GroupingRelation"
+      },
+      "title": "Grouping Relations",
+      "type": "array"
     },
     "primary_category": {
       "anyOf": [

@@ -1,0 +1,78 @@
+{
+  "manifest_version": "1.0",
+  "sources": [
+    {
+      "name": "scoped",
+      "dataset_id": "campus-mail-scoped-v1",
+      "relative_path": "dataset/mail/scoped_run/sanitized/documents.jsonl",
+      "input_sha256": "6d6f93780dd263de809d1c15e9e352fb82891af96de8bfd959c9c8b4d6d8af38",
+      "records": 575,
+      "task": "academic",
+      "data_origin": "designated_research",
+      "source_type": "legacy_document",
+      "input_format": "document_v1",
+      "usage_status": "unverified",
+      "policy": "preserve_context",
+      "relationships_path": "dataset/mail/scoped_run/sanitized/relationships.jsonl",
+      "relationships_sha256": "02212bfeb06777412e5b5f557e51d9c7c29bb70ed2b0d42355133e6483edcb7d",
+      "source_family": "campus-mail-snapshot-20261014"
+    },
+    {
+      "name": "broad",
+      "dataset_id": "campus-mail-broad-v1",
+      "relative_path": "dataset/mail/sanitized/documents.jsonl",
+      "input_sha256": "62ddd1793102c6c4e72e8c504545f8765dbd966952f508538279fbcd4dfcd32c",
+      "records": 8292,
+      "task": "academic",
+      "data_origin": "designated_research",
+      "source_type": "legacy_document",
+      "input_format": "document_v1",
+      "usage_status": "unverified",
+      "policy": "preserve_context",
+      "relationships_path": "dataset/mail/sanitized/relationships.jsonl",
+      "relationships_sha256": "c6035bfeaeb6be8405d674c43721b7af1fcb81de8b522cabcb2e6a13a264c4d5",
+      "source_family": "campus-mail-snapshot-20261014"
+    },
+    {
+      "name": "charlie9",
+      "dataset_id": "charlie9-v1",
+      "relative_path": "dataset/public/normalized/charlie9_verified.jsonl",
+      "input_sha256": "1962cd625249c32d1b1e71d1a1db46d6b82ab0c0b8aebf315be33890234362c5",
+      "records": 3655,
+      "task": "actionability",
+      "data_origin": "public",
+      "source_type": "sentence_actionability",
+      "input_format": "sentence_actionability",
+      "usage_status": "unverified",
+      "policy": "preserve_context",
+      "source_family": "enron-actionability-related-annotations"
+    },
+    {
+      "name": "parakweet",
+      "dataset_id": "parakweet-v1",
+      "relative_path": "dataset/public/normalized/parakweet.jsonl",
+      "input_sha256": "8ddce8428ea4cf934430b1f923fc681fb91e59b29a0a0c5e865891ed9eea453a",
+      "records": 4649,
+      "task": "actionability",
+      "data_origin": "public",
+      "source_type": "sentence_actionability",
+      "input_format": "sentence_actionability",
+      "usage_status": "unverified",
+      "policy": "preserve_context",
+      "source_family": "enron-actionability-related-annotations"
+    },
+    {
+      "name": "durg-sample",
+      "dataset_id": "durg-sample-v1",
+      "relative_path": "dataset/public/quarantine/durg_university/sample_documents.jsonl",
+      "input_sha256": "c065a266ca993c16bd4661113b78f3cf59f6673a33291925eec3c6891023e1bd",
+      "records": 120,
+      "task": "academic",
+      "data_origin": "public",
+      "source_type": "legacy_document",
+      "input_format": "document_v1",
+      "usage_status": "quarantined",
+      "policy": "preserve_context"
+    }
+  ]
+}

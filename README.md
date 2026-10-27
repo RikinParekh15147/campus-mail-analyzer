@@ -52,6 +52,15 @@ verification remains a later implementation task.
 
 Implementation status: [ML_IMPROVEMENT_TASKS.md](ML_IMPROVEMENT_TASKS.md).
 
+The installed corpus has passed DATA-01/DATA-03 acceptance: 17,291 source records
+preserved in separate validated research exports, with text exclusions and source
+overlap documented in the [corpus audit](reports/DATA03_CORPUS_ACCEPTANCE.md).
+Reproduce against the pinned local snapshots with
+`.venv/bin/python scripts/prepare_research_data.py --output-dir artifacts/research/NEW_RUN_ID`.
+Use `.venv/bin/python scripts/verify_dataset_imports.py` to verify actual-file
+relocation in a temporary store. No downloaded dataset or generated export belongs
+in Git; these checks do not establish model accuracy.
+
 Research exports can now be checked against the explicit v2 contract without
 changing their contents:
 

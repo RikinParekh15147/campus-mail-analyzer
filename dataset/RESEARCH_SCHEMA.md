@@ -35,7 +35,7 @@ Input is UTF-8 JSONL, one object per nonblank physical line. The validator rejec
 | `task` | `academic` or `actionability`; their target labels are not interchangeable |
 | `data_origin` | `designated_research`, `public`, or `synthetic`; operational mail is not a research input type |
 | `source_type` | Controlled source/genre name such as `gmail_message`, `attachment`, or `fixture` |
-| `text` | Nonblank canonical text, at most 2,000,000 Unicode characters |
+| `text` | Canonical text, at most 2,000,000 Unicode characters; blank only with explicit unavailable status |
 
 `usage_status` defaults to `unverified`; `permitted` and `quarantined` are also representable. Validation accepts quarantined material for inventory purposes; acceptance does **not** authorize training. Metadata, reference dates and labels are never inferred from a path or from current time.
 
@@ -115,3 +115,89 @@ To regenerate the JSON Schema after intentional contract changes:
 ```
 
 The test suite verifies that the checked-in schema matches Python exactly.
+
+
+## DATA-03 acceptance on the installed corpus (27 October 2026)
+
+The pinned source inventory is [research_sources.json](../research_sources.json).
+The original five JSONL exports remain immutable. Reproduce inventory, file hashes,
+reference/evidence checks and all five v2 migrations in a **new** run directory:
+
+```bash
+.venv/bin/python scripts/prepare_research_data.py --output-dir artifacts/research/my-data03-run
+```
+
+PowerShell:
+
+```powershell
+.\.venv-win\Scripts\python.exe scripts/prepare_research_data.py --output-dir artifacts/research/my-data03-run
+```
+
+The run fails if a declared source checksum changes. It verifies the scoped
+attachment binaries, public raw files, sampled PDFs and full archive inventory;
+outputs stay under ignored local research storage. `run.json` records input/output
+hashes, code hashes, counts, policy, interpreter and platform. The original source
+IDs remain stable across machines. A changed source snapshot needs an intentional
+manifest/dataset-version update; never edit the expected checksum merely to bypass
+a failure.
+
+For an individual mail export, add `--policy preserve_context` and
+`--relationships path/to/relationships.jsonl` to the migration command above.
+For normalized public sentence files, use `--input-format sentence_actionability`
+with `--task actionability --data-origin public`. Integer 0/1 source labels map
+explicitly to false/true. Their provenance remains `source`, completeness remains
+`partial`, and upstream split/label metadata is retained. No public source is
+silently turned into an academic-category corpus.
+
+### Unavailable text and exclusions
+
+`text_status` defaults to `available`, which still requires nonblank text.
+`unavailable` explicitly permits blank/whitespace text and requires every annotation
+task to remain unannotated. Such records preserve IDs, timestamps, parent/context
+links and groups but are excluded from text-model input. The original labels and
+text remain auditable in source files and migration metadata. This avoids deleting
+an unreadable attachment and breaking valid context references.
+
+The `preserve_context` policy also removes repeated secondary-category entries
+while retaining the original list; it never invents a replacement category.
+Conflicting labels on the same normalized subject/body input are withheld from
+**all** affected rows, with original labels retained. Every transformation has a
+count and source-line diagnostic. Strict mode still rejects these cases. A complete
+error report prevents publication; no partially converted corpus is promoted.
+
+`grouping_relations` retains directed source-declared links from the relationship
+sidecar. These are grouping candidates, separate from reviewed semantic annotations;
+raw relationship evidence remains in `source_metadata.legacy_relationships`.
+Targets must resolve. Nested attachment parent IDs are promoted to the canonical
+`parent_document_id`, with conflicting declarations rejected.
+
+### Operational reimport and legacy profile migration
+
+Operational import stages and validates the whole JSONL before inserting selected
+records in one transaction. It reports unavailable-text exclusions, verifies the
+collection checksum when declared, rejects duplicate IDs and changed source data
+under an existing identity, and preserves completed analysis/confirmed edits on
+reimport. Interrupted processing remains pending and can resume. A deliberate
+reanalysis workflow is separate from importing the same snapshot again.
+
+Old path-derived source keys are detected before reimport. Inspect an existing
+profile (substitute its actual owner ID and database path):
+
+```bash
+.venv/bin/python -m campusmail dataset import-identities --database runtime/campus.sqlite --owner OWNER_ID
+.venv/bin/python -m campusmail dataset migrate-import-ids --database runtime/campus.sqlite --owner OWNER_ID --dataset-id campus-mail-scoped-v1 --legacy-namespace OLD_12_HEX_NAMESPACE
+```
+
+The second command is a dry run. Apply the reviewed mapping with a **new** backup
+path:
+
+```bash
+.venv/bin/python -m campusmail dataset migrate-import-ids --database runtime/campus.sqlite --owner OWNER_ID --dataset-id campus-mail-scoped-v1 --legacy-namespace OLD_12_HEX_NAMESPACE --apply --backup artifacts/private-backups/before-import-ids.sqlite
+```
+
+Only that owner's selected legacy namespace is migrated. A verified SQLite backup
+is taken under the database write lock before changes. Message IDs, payloads,
+revision history and related records remain intact; collisions abort instead of
+merging. To recover, close the application and restore the full backup as the profile
+database. Never replace a database while the application is running. Do not expose
+profile databases/backups in Git or in shared research artifacts.

@@ -1,10 +1,12 @@
 {
   "scoped": {
     "dataset_id": "campus-mail-scoped-v1",
-    "relative_path": "dataset/mail/scoped_run/sanitized/documents.jsonl"
+    "relative_path": "dataset/mail/scoped_run/sanitized/documents.jsonl",
+    "input_sha256": "6d6f93780dd263de809d1c15e9e352fb82891af96de8bfd959c9c8b4d6d8af38"
   },
   "broad": {
     "dataset_id": "campus-mail-broad-v1",
-    "relative_path": "dataset/mail/sanitized/documents.jsonl"
+    "relative_path": "dataset/mail/sanitized/documents.jsonl",
+    "input_sha256": "62ddd1793102c6c4e72e8c504545f8765dbd966952f508538279fbcd4dfcd32c"
   }
 }

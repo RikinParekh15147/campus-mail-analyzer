@@ -5,6 +5,8 @@ annotations; this module cannot establish review completeness from old fields.
 """
 
 from hashlib import sha256
+from collections import Counter
+import sqlite3
 import json
 import os
 from pathlib import Path
@@ -13,7 +15,8 @@ from tempfile import TemporaryDirectory
 from pydantic import ValidationError
 
 from .contracts import ResearchDocument
-from .validation import _reject_constant, _unique_keys, validate_jsonl
+from .validation import validate_jsonl
+from .files import file_sha256, jsonl_records
 
 GROUP_FIELDS = (
     "thread_id",
@@ -53,9 +56,35 @@ MAPPED_FIELDS = {
 
 
 def convert_legacy_row(
-    row, *, dataset_id, task, data_origin, source_type, usage_status, line_hash
+    row,
+    *,
+    dataset_id,
+    task,
+    data_origin,
+    source_type,
+    usage_status,
+    line_hash,
+    policy="strict",
+    input_format="document_v1",
 ):
     """Map only fields whose meaning is known; keep all others as legacy metadata."""
+    original_row = row
+    if input_format == "sentence_actionability":
+        if task != "actionability" or data_origin not in ("public", "synthetic"):
+            raise ValueError("source_boundary_mismatch")
+        if (
+            row.get("task") != "sentence_actionability"
+            or type(row.get("label")) is not int
+            or row["label"] not in (0, 1)
+        ):
+            raise ValueError("invalid_public_actionability")
+        row = {
+            **row,
+            "document_id": row.get("record_id"),
+            "task": "actionability",
+            "actionability_label": bool(row["label"]),
+            "label_provenance": "source",
+        }
     if not isinstance(row, dict) or row.get("schema_version") not in (None, "1.0"):
         raise ValueError("unsupported_legacy_record")
     if row.get("dataset_id", dataset_id) != dataset_id:
@@ -69,7 +98,9 @@ def convert_legacy_row(
         raise ValueError("source_boundary_mismatch")
     if not isinstance(row.get("document_id"), str) or not row["document_id"].strip():
         raise ValueError("missing_document_id")
-    if not isinstance(row.get("text"), str) or not row["text"].strip():
+    if not isinstance(row.get("text"), str) or (
+        not row["text"].strip() and policy == "strict"
+    ):
         raise ValueError("missing_text")
     if not isinstance(row.get("source_metadata", {}), dict):
         raise ValueError("invalid_source_metadata")
@@ -86,6 +117,17 @@ def convert_legacy_row(
         "text": row["text"],
         "source_metadata": {
             "legacy_source_metadata": row.get("source_metadata", {}),
+            "legacy_task": original_row.get("task"),
+            "legacy_labels": {
+                k: original_row.get(k)
+                for k in (
+                    "primary_category",
+                    "secondary_categories",
+                    "label",
+                    "original_label",
+                )
+            },
+            "migration_changes": [],
             "legacy_extra_fields": {
                 key: value for key, value in row.items() if key not in MAPPED_FIELDS
             },
@@ -97,11 +139,23 @@ def convert_legacy_row(
         },
     }
     result.update({key: row[key] for key in COPY_FIELDS if key in row})
+    parent = row.get("source_metadata", {}).get("parent_document_id")
+    if parent:
+        if result.get("parent_document_id") not in (None, parent):
+            raise ValueError("parent_identity_mismatch")
+        result["parent_document_id"] = parent
     if task == "academic":
         if row.get("actionability_label") is not None:
             raise ValueError("mixed_task_labels")
         label = row.get("primary_category")
         secondary = row.get("secondary_categories") or []
+        if policy == "preserve_context" and isinstance(secondary, list):
+            unique = list(dict.fromkeys(x for x in secondary if x != label))
+            if unique != secondary:
+                result["source_metadata"]["migration_changes"].append(
+                    "duplicate_categories_removed"
+                )
+            secondary = unique
         if label is not None or secondary:
             result["primary_category"] = label
             result["secondary_categories"] = secondary
@@ -118,6 +172,21 @@ def convert_legacy_row(
             result["annotation_status"] = {
                 "classification": {"completeness": "partial", "provenance": "weak"}
             }
+    if input_format == "sentence_actionability" and "annotation_status" in result:
+        result["annotation_status"]["classification"]["provenance"] = "source"
+    if not row["text"].strip():
+        result["text_status"] = "unavailable"
+        for field in (
+            "primary_category",
+            "secondary_categories",
+            "secondary_categories_complete",
+            "actionability_label",
+            "annotation_status",
+        ):
+            result.pop(field, None)
+        result["source_metadata"]["migration_changes"].append(
+            "unavailable_text_context_only"
+        )
     # Unknown legacy arrays remain in legacy_extra_fields, never promoted to gold.
     ResearchDocument.model_validate(result)
     return result
@@ -134,17 +203,32 @@ def migrate_v1_jsonl(
     usage_status="unverified",
     max_errors=100,
     max_line_bytes=16 * 1024 * 1024,
+    policy="strict",
+    input_format="document_v1",
+    relationships_path=None,
 ):
+    """Stage on disk, preserve source identities, and publish only a valid corpus.
+
+    preserve_context retains blank sources as explicitly unavailable context nodes,
+    normalizes repeated category entries and withholds conflicting class labels.
+    It never chooses a winning annotation or drops a document/reference.
+    """
     input_path, output_path = Path(input_path), Path(output_path)
     if max_errors < 1 or max_line_bytes < 1:
         raise ValueError("Migration limits must be positive")
-    if input_path.resolve() == output_path.resolve() or (
-        input_path.exists()
-        and output_path.exists()
-        and os.path.samefile(input_path, output_path)
+    if policy not in ("strict", "preserve_context") or input_format not in (
+        "document_v1",
+        "sentence_actionability",
     ):
-        raise ValueError("Migration output must differ from its source")
-    # Check command-level declarations before reading private records.
+        raise ValueError("Unknown migration policy or format")
+    sources = [input_path] + ([Path(relationships_path)] if relationships_path else [])
+    for source in sources:
+        if source.resolve() == output_path.resolve() or (
+            source.exists()
+            and output_path.exists()
+            and os.path.samefile(source, output_path)
+        ):
+            raise ValueError("Migration output must differ from its sources")
     ResearchDocument.model_validate(
         {
             "schema_version": "2.0",
@@ -157,48 +241,64 @@ def migrate_v1_jsonl(
             "text": "preflight",
         }
     )
-    digest = sha256()
+    hashes = [file_sha256(p) for p in sources]
     report = {
         "status": "invalid",
         "source_lines": 0,
         "converted_records": 0,
+        "published_records": 0,
         "error_count": 0,
         "errors": [],
+        "policy": policy,
+        "input_format": input_format,
+        "input_sha256": hashes[0],
+        "dataset_id": dataset_id,
+        "changes": {},
+        "changed_lines": [],
+        "relationship_records": 0,
     }
+    changes = Counter()
 
-    def error(line, code):
+    def error(line, code, source="documents"):
         report["error_count"] += 1
         if len(report["errors"]) < max_errors:
-            report["errors"].append({"line": line, "code": code})
+            report["errors"].append({"line": line, "code": code, "source": source})
+
+    def changed(line, codes):
+        for code in codes:
+            changes[code] += 1
+        if codes and len(report["changed_lines"]) < max_errors:
+            report["changed_lines"].append({"line": line, "codes": codes})
+
+    def finish():
+        report["errors_truncated"] = report["error_count"] > len(report["errors"])
+        report["changes"] = dict(changes)
+        report["changed_lines_truncated"] = report.get("changed_records", 0) > len(
+            report["changed_lines"]
+        )
+        return report
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(
         prefix="campus-v1-migration-", dir=output_path.parent
     ) as temporary:
         candidate = Path(temporary) / "candidate.jsonl"
-        with (
-            input_path.open("rb") as source,
-            candidate.open("w", encoding="utf-8") as target,
-        ):
-            while chunk := source.readline(max_line_bytes + 1):
+        db = sqlite3.connect(Path(temporary) / "stage.sqlite")
+        try:
+            db.executescript("""
+                CREATE TABLE docs(id TEXT PRIMARY KEY, line INTEGER, body TEXT, digest TEXT, label TEXT);
+                CREATE INDEX text_labels ON docs(digest,label);
+                CREATE TABLE edges(id TEXT PRIMARY KEY, source TEXT, target TEXT, body TEXT);
+                CREATE INDEX edge_sources ON edges(source);
+            """)
+            for line, row, line_hash, problem in jsonl_records(
+                input_path, max_line_bytes
+            ):
                 report["source_lines"] += 1
-                line = report["source_lines"]
-                line_digest = sha256(chunk)
-                digest.update(chunk)
-                if len(chunk) > max_line_bytes:
-                    while not chunk.endswith(b"\n"):
-                        chunk = source.readline(max_line_bytes + 1)
-                        if not chunk:
-                            break
-                        digest.update(chunk)
-                    error(line, "line_too_large")
+                if problem:
+                    error(line, problem)
                     continue
                 try:
-                    row = json.loads(
-                        chunk.decode("utf-8"),
-                        object_pairs_hook=_unique_keys,
-                        parse_constant=_reject_constant,
-                    )
                     converted = convert_legacy_row(
                         row,
                         dataset_id=dataset_id,
@@ -206,54 +306,159 @@ def migrate_v1_jsonl(
                         data_origin=data_origin,
                         source_type=source_type,
                         usage_status=usage_status,
-                        line_hash=line_digest.hexdigest(),
+                        line_hash=line_hash,
+                        policy=policy,
+                        input_format=input_format,
                     )
-                except (
-                    UnicodeDecodeError,
-                    ValueError,
-                    TypeError,
-                    RecursionError,
-                ) as exc:
-                    code = (
-                        str(exc)
-                        if type(exc) is ValueError
-                        and str(exc)
-                        in {
-                            "unsupported_legacy_record",
-                            "dataset_id_mismatch",
-                            "source_boundary_mismatch",
-                            "missing_document_id",
-                            "missing_text",
-                            "invalid_source_metadata",
-                            "unexpected_annotation_status",
-                            "mixed_task_labels",
-                        }
-                        else "invalid_legacy_record"
-                    )
-                    error(line, code)
-                    continue
                 except ValidationError:
-                    # Pydantic errors may contain private input; report only a code.
                     error(line, "schema_invalid")
                     continue
-                target.write(json.dumps(converted, ensure_ascii=False) + "\n")
+                except (ValueError, TypeError, RecursionError) as exc:
+                    safe = {
+                        "unsupported_legacy_record",
+                        "dataset_id_mismatch",
+                        "source_boundary_mismatch",
+                        "missing_document_id",
+                        "missing_text",
+                        "invalid_source_metadata",
+                        "unexpected_annotation_status",
+                        "mixed_task_labels",
+                        "invalid_public_actionability",
+                        "parent_identity_mismatch",
+                    }
+                    error(
+                        line,
+                        str(exc)
+                        if type(exc) is ValueError and str(exc) in safe
+                        else "invalid_legacy_record",
+                    )
+                    continue
+                digest = sha256(
+                    " ".join(
+                        (converted.get("subject", "") + " " + converted["text"])
+                        .casefold()
+                        .split()
+                    ).encode()
+                ).hexdigest()
+                label = (
+                    converted.get("primary_category")
+                    if task == "academic"
+                    else converted.get("actionability_label")
+                )
+                try:
+                    db.execute(
+                        "INSERT INTO docs VALUES(?,?,?,?,?)",
+                        (
+                            converted["document_id"],
+                            line,
+                            json.dumps(converted),
+                            digest,
+                            json.dumps(label) if label is not None else None,
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    error(line, "duplicate_document_id")
+                    continue
                 report["converted_records"] += 1
-        report["input_sha256"] = digest.hexdigest()
-        report["errors_truncated"] = report["error_count"] > len(report["errors"])
-        if report["error_count"] or not report["converted_records"]:
-            if not report["converted_records"] and not report["error_count"]:
+            if not report["source_lines"]:
                 error(0, "empty_dataset")
-            return report
-        validation = validate_jsonl(
-            candidate, max_errors=max_errors, max_line_bytes=max_line_bytes
-        )
-        report["v2_validation"] = {
-            key: validation[key]
-            for key in ("status", "error_count", "errors", "errors_truncated")
-        }
-        if validation["status"] != "valid":
-            return report
-        candidate.replace(output_path)
-        report["status"] = "valid"
-        report["output_sha256"] = validation["input_sha256"]
-    return report
+            if relationships_path:
+                report["relationships_sha256"] = hashes[1]
+                for line, edge, _, problem in jsonl_records(
+                    relationships_path, max_line_bytes
+                ):
+                    if problem:
+                        error(line, problem, "relationships")
+                        continue
+                    try:
+                        from .contracts import GroupingRelation
+
+                        link = GroupingRelation.model_validate(
+                            {
+                                "relationship_id": edge.get("relationship_id"),
+                                "target_document_id": edge.get("target_id"),
+                                "type": edge.get("type"),
+                            }
+                        )
+                        if not db.execute(
+                            "SELECT 1 FROM docs WHERE id=?", (edge.get("source_id"),)
+                        ).fetchone():
+                            error(line, "missing_source_reference", "relationships")
+                            continue
+                        db.execute(
+                            "INSERT INTO edges VALUES(?,?,?,?)",
+                            (
+                                link.relationship_id,
+                                edge["source_id"],
+                                link.target_document_id,
+                                json.dumps(edge),
+                            ),
+                        )
+                    except (ValidationError, sqlite3.IntegrityError):
+                        error(
+                            line, "invalid_or_duplicate_relationship", "relationships"
+                        )
+                        continue
+                    report["relationship_records"] += 1
+            if report["error_count"]:
+                return finish()
+            with candidate.open("w", encoding="utf-8") as stream:
+                for doc_id, line, body, conflict in db.execute("""
+                    SELECT d.id,d.line,d.body,c.digest IS NOT NULL FROM docs d
+                    LEFT JOIN (SELECT digest FROM docs WHERE label IS NOT NULL GROUP BY digest
+                               HAVING COUNT(DISTINCT label)>1) c ON c.digest=d.digest ORDER BY d.line
+                """):
+                    document = json.loads(body)
+                    codes = document["source_metadata"]["migration_changes"]
+                    if conflict and policy == "preserve_context":
+                        for field in (
+                            "primary_category",
+                            "secondary_categories",
+                            "secondary_categories_complete",
+                            "actionability_label",
+                            "annotation_status",
+                        ):
+                            document.pop(field, None)
+                        codes.append("conflicting_classification_withheld")
+                    edges = [
+                        json.loads(r[0])
+                        for r in db.execute(
+                            "SELECT body FROM edges WHERE source=? ORDER BY id",
+                            (doc_id,),
+                        )
+                    ]
+                    if edges:
+                        document["source_metadata"]["legacy_relationships"] = edges
+                        document["grouping_relations"] = [
+                            {
+                                "relationship_id": e["relationship_id"],
+                                "target_document_id": e["target_id"],
+                                "type": e["type"],
+                            }
+                            for e in edges
+                        ]
+                    if codes:
+                        report["changed_records"] = report.get("changed_records", 0) + 1
+                        changed(line, codes)
+                    stream.write(json.dumps(document, ensure_ascii=False) + "\n")
+            validation = validate_jsonl(
+                candidate, max_errors=max_errors, max_line_bytes=max_line_bytes
+            )
+            report["v2_validation"] = validation
+            if validation["status"] != "valid":
+                report["error_count"] = validation["error_count"]
+                report["errors"] = validation["errors"]
+                return finish()
+            if hashes != [file_sha256(p) for p in sources]:
+                error(0, "source_changed_during_migration")
+                return finish()
+            candidate.replace(output_path)
+            report.update(
+                status="valid",
+                output_sha256=validation["input_sha256"],
+                published_records=report["converted_records"],
+                source_unchanged=True,
+            )
+            return finish()
+        finally:
+            db.close()

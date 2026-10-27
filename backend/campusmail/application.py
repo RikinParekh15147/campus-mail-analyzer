@@ -171,9 +171,12 @@ class Application:
     def dataset_path(self, collection):
         return self.dataset_collection(collection)[0]
 
-    def import_collection(self, owner, payload):
+    def import_collection(self, owner, payload, report=None):
         collection = payload.get("collection", "scoped")
         path, dataset_id = self.dataset_collection(collection)
+        entry = json.loads((self.project / "dataset_collections.json").read_text())[
+            collection
+        ]
         return import_dataset(
             self.store,
             owner,
@@ -181,6 +184,8 @@ class Application:
             self.process,
             payload.get("limit"),
             dataset_id=dataset_id,
+            report=report,
+            expected_sha256=entry.get("input_sha256"),
         )
 
     def gmail_sync(self, owner, payload):

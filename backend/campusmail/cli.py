@@ -17,6 +17,20 @@ def main():
         "dataset", help="Validate designated research inputs without changing them"
     )
     dataset_sub = dataset.add_subparsers(dest="dataset_command", required=True)
+    audit = dataset_sub.add_parser("audit")
+    audit.add_argument("--project-root", type=Path, default=PROJECT)
+    audit.add_argument("--report", type=Path)
+    audit.add_argument("--skip-asset-hashes", action="store_true")
+    identities = dataset_sub.add_parser("import-identities")
+    identities.add_argument("--database", type=Path, required=True)
+    identities.add_argument("--owner", required=True)
+    rekey = dataset_sub.add_parser("migrate-import-ids")
+    rekey.add_argument("--database", type=Path, required=True)
+    rekey.add_argument("--owner", required=True)
+    rekey.add_argument("--dataset-id", required=True)
+    rekey.add_argument("--legacy-namespace", required=True)
+    rekey.add_argument("--apply", action="store_true")
+    rekey.add_argument("--backup", type=Path)
     validate = dataset_sub.add_parser("validate")
     validate.add_argument("--input", type=Path, required=True)
     validate.add_argument("--report", type=Path)
@@ -39,6 +53,15 @@ def main():
     )
     migrate.add_argument("--report", type=Path)
     migrate.add_argument("--max-errors", type=int, default=100)
+    migrate.add_argument(
+        "--policy", choices=["strict", "preserve_context"], default="strict"
+    )
+    migrate.add_argument(
+        "--input-format",
+        choices=["document_v1", "sentence_actionability"],
+        default="document_v1",
+    )
+    migrate.add_argument("--relationships", type=Path)
     server = sub.add_parser("serve")
     server.add_argument("--port", type=int, default=8765)
     server.add_argument("--data-dir", default=str(PROJECT / "runtime"))
@@ -58,6 +81,60 @@ def main():
         report = diagnose(args.project_root, args.require_datasets)
         print(json.dumps(report, indent=2))
         raise SystemExit(0 if report["status"] == "ok" else 1)
+    elif args.command == "dataset" and args.dataset_command in (
+        "migrate-import-ids",
+        "import-identities",
+        "audit",
+    ):
+        import sqlite3
+
+        try:
+            if args.dataset_command == "audit":
+                from .research.audit import audit_corpus
+
+                if args.report and args.report.resolve().is_relative_to(
+                    (args.project_root / "dataset").resolve()
+                ):
+                    parser.error(
+                        "Audit reports must be outside the immutable dataset directory"
+                    )
+                report = audit_corpus(
+                    args.project_root, verify_assets=not args.skip_asset_hashes
+                )
+                if args.report:
+                    from tempfile import NamedTemporaryFile
+
+                    args.report.parent.mkdir(parents=True, exist_ok=True)
+                    with NamedTemporaryFile(
+                        mode="w", encoding="utf-8", dir=args.report.parent, delete=False
+                    ) as stream:
+                        temporary = Path(stream.name)
+                        json.dump(report, stream, indent=2)
+                    try:
+                        temporary.replace(args.report)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+            elif args.dataset_command == "import-identities":
+                from .dataset_import import inspect_import_ids
+
+                report = inspect_import_ids(args.database, owner=args.owner)
+            else:
+                from .dataset_import import migrate_import_ids
+
+                report = migrate_import_ids(
+                    args.database,
+                    owner=args.owner,
+                    dataset_id=args.dataset_id,
+                    legacy_namespace=args.legacy_namespace,
+                    apply=args.apply,
+                    backup_path=args.backup,
+                )
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            parser.error(
+                f"Dataset operation failed ({type(exc).__name__}); verify paths, owner and identity declarations"
+            )
+        print(json.dumps(report, indent=2))
+        raise SystemExit(0 if report["status"] == "valid" else 1)
     elif args.command == "dataset":
         import sqlite3
         from .research.validation import validate_jsonl
@@ -66,6 +143,8 @@ def main():
         protected = [args.input]
         if args.dataset_command == "migrate-v1":
             protected.append(args.output)
+            if args.relationships:
+                protected.append(args.relationships)
         if args.report and any(
             args.report.resolve() == path.resolve()
             or (
@@ -91,6 +170,9 @@ def main():
                     source_type=args.source_type,
                     usage_status=args.usage_status,
                     max_errors=args.max_errors,
+                    policy=args.policy,
+                    input_format=args.input_format,
+                    relationships_path=args.relationships,
                 )
             output = json.dumps(report, indent=2) + "\n"
             if args.report:
@@ -157,14 +239,18 @@ def main():
         owner = next(
             (u for u in app.store.users() if u["name"] == args.profile), None
         ) or app.store.create_user(args.profile)
+        import_report = {}
         count = app.import_collection(
-            owner["id"], {"collection": args.collection, "limit": args.limit}
+            owner["id"],
+            {"collection": args.collection, "limit": args.limit},
+            report=import_report,
         )
         print(
             json.dumps(
                 {
                     "profile_id": owner["id"],
                     "imported": count,
+                    "import_report": import_report,
                     "counts": app.dashboard(owner["id"])["counts"],
                 }
             )

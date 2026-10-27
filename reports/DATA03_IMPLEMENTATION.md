@@ -1,5 +1,9 @@
 # DATA-03 implementation checkpoint — 25 October 2026
 
+**Superseded acceptance status:** DATA-03 was completed against the installed corpus
+on 27 October 2026. See [the final corpus acceptance report](DATA03_CORPUS_ACCEPTANCE.md).
+The limitations below describe the earlier checkpoint.
+
 ## Implemented
 
 - Operational `import_dataset` reads JSONL one line at a time. Its source key is a

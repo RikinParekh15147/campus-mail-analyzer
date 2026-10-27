@@ -1,4 +1,5 @@
 .venv/
+.DS_Store
 .venv-win/
 node_modules/
 desktop/dist/

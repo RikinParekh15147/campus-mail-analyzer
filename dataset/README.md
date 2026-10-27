@@ -1,10 +1,10 @@
 # Unified dataset directory
 
-New research-contract tooling: [v2 schema and validation guide](RESEARCH_SCHEMA.md).
-The validator is read-only and requires an explicit v2 export. Legacy exports
-can be converted with the explicit `dataset migrate-v1` command described in the
-schema guide. The operational import collections and their stable IDs are listed
-in [dataset_collections.json](../dataset_collections.json).
+The installed corpus was audited on 27 October 2026. See the
+[DATA-01/DATA-03 acceptance report](../reports/DATA03_CORPUS_ACCEPTANCE.md),
+[schema and migration guide](RESEARCH_SCHEMA.md), and pinned
+[source manifest](../research_sources.json). Reproducible derived exports stay in
+ignored `artifacts/research/`; source exports and private originals are immutable.
 
 All project research inputs are now under this directory. No source records were discarded.
 
