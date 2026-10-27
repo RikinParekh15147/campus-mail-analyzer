@@ -5,6 +5,8 @@ The installed corpus was audited on 27 October 2026. See the
 [schema and migration guide](RESEARCH_SCHEMA.md), and pinned
 [source manifest](../research_sources.json). Reproducible derived exports stay in
 ignored `artifacts/research/`; source exports and private originals are immutable.
+The [DATA-04 leakage grouping guide](LEAKAGE_GROUPING.md) explains trusted
+components, conservative split guards and private membership artifacts.
 
 All project research inputs are now under this directory. No source records were discarded.
 

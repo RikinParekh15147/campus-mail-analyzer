@@ -10,6 +10,7 @@ __pycache__/
 /dataset/*
 !/dataset/README.md
 !/dataset/RESEARCH_SCHEMA.md
+!/dataset/LEAKAGE_GROUPING.md
 !/dataset/tools/
 runtime/
 artifacts/

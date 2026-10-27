@@ -1,5 +1,17 @@
 # Build progress
 
+## DATA-04 leakage components accepted — 27 October 2026
+
+Built pinned, private membership for all 17,291 records: 8,068 trusted components
+and 7,859 conservative split guards. Linked scoped/broad source identities,
+threads, parents, exact/near duplicates, templates and explicit relation edges.
+Audited one legitimate 142-row thread component, 124 broad subject-based legacy
+groups spanning trusted components, and conflicting weak labels. A separate
+postcheck verified 48,995 references with zero errors. **138 tests passed with
+research inputs enabled**. DATA-04 is checked complete; DATA-05 must allocate
+whole split guards until soft links are reviewed. See
+[component acceptance](reports/DATA04_COMPONENT_ACCEPTANCE.md).
+
 ## DATA-01/DATA-03 accepted on the installed corpus — 27 October 2026
 
 Audited all five designated JSONL sources, original asset hashes and the full

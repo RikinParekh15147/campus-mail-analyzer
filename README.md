@@ -61,6 +61,12 @@ Use `.venv/bin/python scripts/verify_dataset_imports.py` to verify actual-file
 relocation in a temporary store. No downloaded dataset or generated export belongs
 in Git; these checks do not establish model accuracy.
 
+The [DATA-04 component report](reports/DATA04_COMPONENT_ACCEPTANCE.md) and
+[grouping guide](dataset/LEAKAGE_GROUPING.md) document leakage-safe membership.
+Run `.venv/bin/python scripts/build_leakage_components.py --input-run artifacts/research/data03-20261027-verified --output-dir artifacts/research/NEW_DATA04_RUN`
+to reproduce grouping from a pinned validated export. Use complete provisional
+split guards until the legacy subject-based links have been reviewed.
+
 Research exports can now be checked against the explicit v2 contract without
 changing their contents:
 
