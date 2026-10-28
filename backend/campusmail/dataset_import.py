@@ -34,6 +34,7 @@ def _payload(row, dataset_id):
         raise ValueError("Invalid source subject")
     for field in (
         "sent_at",
+        "timezone",
         "thread_id",
         "source_type",
         "parent_message_id",
@@ -49,6 +50,7 @@ def _payload(row, dataset_id):
         "text": row["text"],
         "subject": row.get("subject", ""),
         "sent_at": row.get("sent_at"),
+        "timezone": row.get("timezone"),
         "thread_id": row.get("thread_id"),
         "source_category": category if category in CATEGORIES else None,
         "label_provenance": row.get("label_provenance", "unknown"),
@@ -214,8 +216,9 @@ def import_dataset(
                             )
                         stats["existing"] += 1
                         record_id = old["id"]
+                        enriched = dict(existing)
+                        metadata_changed = False
                         if not old_hash:
-                            enriched = dict(existing)
                             for k in (
                                 "dataset_id",
                                 "imported_source_sha256",
@@ -227,6 +230,14 @@ def import_dataset(
                             ):
                                 if k in incoming:
                                     enriched.setdefault(k, incoming[k])
+                            metadata_changed = enriched != existing
+                        # Older imports recorded the source hash but omitted
+                        # the timezone needed to resolve relative dates.
+                        if incoming.get("timezone") and not enriched.get("timezone"):
+                            enriched["timezone"] = incoming["timezone"]
+                            enriched["import_processing_status"] = "pending"
+                            metadata_changed = True
+                        if metadata_changed:
                             stamp = now()
                             db.execute(
                                 "INSERT INTO revisions VALUES(?,?,?,?,?)",
@@ -246,7 +257,7 @@ def import_dataset(
                                     record_id,
                                 ),
                             )
-                        pending = existing.get("import_processing_status") == "pending"
+                        pending = enriched.get("import_processing_status") == "pending"
                     else:
                         record_id, stamp = uuid4().hex, now()
                         incoming["import_processing_status"] = (

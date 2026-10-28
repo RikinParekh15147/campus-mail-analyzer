@@ -11,6 +11,8 @@ __pycache__/
 !/dataset/README.md
 !/dataset/RESEARCH_SCHEMA.md
 !/dataset/LEAKAGE_GROUPING.md
+!/dataset/ANNOTATION_GUIDE.md
+!/dataset/RUNTIME_EVAL_MAPPING.md
 !/dataset/tools/
 runtime/
 artifacts/

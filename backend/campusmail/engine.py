@@ -3,8 +3,80 @@ import hashlib
 import re
 from .nlp import analyze, sentences
 from .documents import read_document
+from .reconciliation import align_date_times
 from datetime import datetime, time, date, timezone
 from zoneinfo import ZoneInfo
+
+TERM = re.compile(
+    r"\b(?:spring|summer|fall|autumn|winter)\s+20\d{2}\b"
+    r"|\b20\d{2}\s+(?:spring|summer|fall|autumn|winter)\b"
+    r"|\b(?:semester|sem)\s*(?:[1-9]|1[0-2])\s*[-/, ]\s*20\d{2}\b",
+    re.I,
+)
+EVENT_NAME = re.compile(
+    r"\b([A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*){0,4} "
+    r"(?:Workshop|Meeting|Seminar|Webinar|Exam))\b"
+)
+CANCEL_WORD = re.compile(r"\b(?:cancelled|canceled)\b", re.I)
+ASSIGNMENT_NUMBER = re.compile(
+    r"\b(?:assignment|homework|project)\s*[-#:]?\s*(\d+)\b", re.I,
+)
+CANCEL_NEGATION = re.compile(
+    r"\b(?:not|never|no longer|isn't|wasn't|hasn't|haven't|won't|shouldn't)"
+    r"\s+(?:be\s+|been\s+|being\s+)?$", re.I,
+)
+CANCEL_HEDGE = re.compile(
+    r"\b(?:may|might|could|possibly|perhaps|pending|proposed|considering|if)\b"
+    r".{0,30}\b(?:cancelled|canceled)\b", re.I,
+)
+CANCEL_BREAK = re.compile(
+    r";|\b(?:but|while|whereas)\b"
+    r"|,\s*(?:and\s+)?(?=(?:[A-Z]{2,5}[- ]?\d{3}\s+)?"
+    r"(?:assignment|homework|project)\s*[-#:]?\s*\d+\b)"
+    r"|,\s*(?:and\s+)?(?=[A-Z][A-Za-z ]{0,35}"
+    r"(?:Workshop|Meeting|Seminar|Webinar|Exam)\b)", re.I,
+)
+
+
+def cancellation_clauses(context):
+    """Keep contrastive and newly named items in separate local clauses."""
+    return [part.strip() for part in CANCEL_BREAK.split(context) if part.strip()]
+
+
+def cancellation_signal(context):
+    """Return none, positive or ambiguous for local cancellation wording."""
+    positive = negative = 0
+    for match in CANCEL_WORD.finditer(context):
+        prefix = context[max(0, match.start() - 30):match.start()]
+        if CANCEL_NEGATION.search(prefix):
+            negative += 1
+        else:
+            positive += 1
+    if positive and negative:
+        return "ambiguous"
+    if positive and CANCEL_HEDGE.search(context):
+        return "ambiguous"
+    return "positive" if positive else "none"
+
+
+def assignment_clause_matches(context, number, task_count):
+    numbers = set(ASSIGNMENT_NUMBER.findall(context))
+    return number in numbers if numbers else task_count == 1
+
+
+def academic_term(subject, text):
+    """Use only explicit season/semester plus year; never infer from import time."""
+    terms = set()
+    for match in TERM.finditer(subject + " " + text):
+        words = match.group().casefold().replace(",", " ").replace("/", " ").replace("-", " ").split()
+        if words[0].isdigit():
+            words = [words[1], words[0]]
+        if words[0] == "autumn":
+            words[0] = "fall"
+        if words[0] in ("sem", "semester"):
+            words[0] = "semester"
+        terms.add(" ".join(words))
+    return (next(iter(terms)), False) if len(terms) == 1 else (None, len(terms) > 1)
 
 
 class Engine:
@@ -42,6 +114,40 @@ class Engine:
             key,
         )
 
+    def occurrence_choice(self, owner, message, key, kind, candidates, question):
+        """Return a reviewed target, 'create_separate', or None for pending review."""
+        decision_key = key
+        selected = message.get("occurrence_decisions", {}).get(key)
+        if selected == "create_separate":
+            return selected
+        if selected:
+            target = next((item for item in candidates if item["id"] == selected), None)
+            if target is not None:
+                return target
+            # A stale choice cannot silently target a changed candidate set.
+            key += ":stale"
+        self.review(
+            owner,
+            key,
+            question,
+            message["id"],
+            "occurrence",
+            [f"existing_{i + 1}" for i in range(len(candidates))]
+            + ["create_separate"],
+            context={
+                "message_id": message["id"],
+                "decision_key": decision_key,
+                "candidate_kind": kind,
+                "candidate_ids": [item["id"] for item in candidates],
+                "text": "\n".join(
+                    f"{i + 1}. {item.get('title', kind)} — "
+                    f"{item.get('due_date') or item.get('date') or 'date unknown'}"
+                    for i, item in enumerate(candidates)
+                ),
+            },
+        )
+        return None
+
     def profile(self, owner):
         return {
             f["field"]: f["value"]
@@ -60,6 +166,38 @@ class Engine:
             )
         except (ValueError, TypeError, AttributeError):
             return 0
+
+    def field_stale(self, old, field, source_at):
+        if not old:
+            return False
+        previous = old.get("field_source_at", {}).get(field)
+        if previous is None:
+            previous = (
+                old.get("source_sent_at") or old.get("latest_source_at")
+                if old.get("field_source_at")
+                else old.get("latest_source_at")
+            )
+        return self.source_rank(source_at) < self.source_rank(previous)
+
+    def apply_entity_overrides(self, owner, old, payload, message_id):
+        """Preserve confirmed edits and surface each differing source assertion."""
+        if not old:
+            return payload
+        for field, value in old.get("overrides", {}).items():
+            candidate = payload.get(field)
+            if candidate != value:
+                self.review(
+                    owner,
+                    "changed:" + old["id"] + ":" + field + ":" + str(candidate),
+                    "New notice conflicts with your " + field,
+                    old["id"], field,
+                    [value, candidate] if candidate is not None else [value],
+                    context={"candidate": candidate, "message_id": message_id},
+                )
+            payload = align_date_times(payload, field, value)
+            if field not in ("date", "due_date"):
+                payload[field] = value
+        return payload
 
     def fact(self, owner, field, value, evidence_id, confirmed=False):
         old = next(
@@ -185,6 +323,21 @@ class Engine:
                 else filename
             )
             parent = self.store.get(owner, parent_id) if parent_id else {}
+            occurrence_key = (
+                "attachment:" + record["sha256"]
+                + (":parent:" + parent_id if parent_id else ":standalone")
+            )
+            old_child = next(
+                (m for m in self.store.list(owner, "message")
+                 if m["source_key"] == occurrence_key),
+                None,
+            )
+            retained = (
+                {k: old_child[k] for k in ("date_corrections", "occurrence_decisions")
+                 if k in old_child}
+                if old_child and old_child.get("text") == result["text"]
+                else {}
+            )
             child = self.store.put(
                 owner,
                 "message",
@@ -193,14 +346,30 @@ class Engine:
                     "subject": subject,
                     "source_type": "uploaded_attachment",
                     "parent_record_id": parent_id,
-                    "sent_at": parent.get("sent_at") or parent.get("created_at"),
+                    "sent_at": parent.get("sent_at"),
+                    "timezone": parent.get("timezone"),
+                    "relative_reference_trusted": parent.get(
+                        "relative_reference_trusted",
+                        not str(parent.get("source_key", "")).startswith("gmail:"),
+                    ),
+                    "thread_id": parent.get("thread_id"),
                     "attachment_resource_ids": [record["id"]],
+                    **retained,
                 },
-                "attachment:" + record["sha256"],
+                occurrence_key,
             )
             self.process(owner, child)
             record = self.store.patch(
-                owner, record["id"], {"analysis_message_id": child["id"]}
+                owner, record["id"],
+                {
+                    "analysis_message_id": child["id"],
+                    "analysis_message_ids": sorted(set(
+                        record.get("analysis_message_ids", [])
+                        + ([record["analysis_message_id"]]
+                           if record.get("analysis_message_id") else [])
+                        + [child["id"]]
+                    )),
+                },
             )
         if parent_id:
             parent = self.store.get(owner, parent_id)
@@ -225,7 +394,17 @@ class Engine:
             r"\n(?:On .{5,180}wrote:|[- ]*Original Message|From:)", full, maxsplit=1
         )[0]
         subject = message.get("subject", "")
-        result = analyze(text, subject, message.get("sent_at"), self.model_path)
+        trusted = message.get("relative_reference_trusted")
+        if trusted is None:
+            parent_id = message.get("parent_record_id")
+            parent = self.store.get(owner, parent_id) if parent_id else {}
+            origin = parent or message
+            trusted = origin.get("relative_reference_trusted")
+            if trusted is None:
+                trusted = not str(origin.get("source_key", "")).startswith("gmail:")
+        relative_anchor = message.get("sent_at") if trusted is True else None
+        result = analyze(text, subject, relative_anchor, self.model_path,
+                         message.get("timezone"))
         if self.model_path and result["actions"]:
             action_model = (
                 Path(self.model_path).parent.parent / "actionability/classifier.joblib"
@@ -239,9 +418,14 @@ class Engine:
                 for action, label in zip(result["actions"], labels):
                     action["trained_actionability"] = str(label)
                     action["method"] = "local_rules_with_trained_actionability"
-        for extracted in result["dates"]:
+        for extracted in result["dates"] + result["subject_dates"]:
+            correction_key = (
+                "subject:" + str(extracted["start"])
+                if extracted.get("field") == "subject"
+                else str(extracted["start"])
+            )
             correction = message.get("date_corrections", {}).get(
-                str(extracted["start"])
+                correction_key
             )
             if correction:
                 extracted.update(
@@ -284,6 +468,19 @@ class Engine:
                 ):
                     result["courses"].append(code)
         result["courses"] = sorted(set(result["courses"]))
+        term, term_ambiguous = academic_term(subject, text)
+        if term_ambiguous:
+            result["needs_review"] = True
+            result["reason"] = "Multiple explicit academic terms need entity-level review"
+            self.review(
+                owner,
+                "academic-term:" + message["id"],
+                "This notice spans multiple terms; add or correct its items manually.",
+                message["id"],
+                context={"message_id": message["id"], "reason": result["reason"]},
+            )
+            self.store.patch(owner, message["id"], {"analysis": result})
+            return result
         course = result["courses"][0] if len(result["courses"]) == 1 else None
         course_known = bool(course and profile.get("enrollment:" + course))
         unrelated = bool(
@@ -308,6 +505,21 @@ class Engine:
                 },
                 code,
             )
+        parent_id = message.get("parent_record_id")
+        parent_message = self.store.get(owner, parent_id) if parent_id else {}
+        unknown_context = (
+            message.get("thread_id")
+            or parent_message.get("thread_id")
+            or parent_id
+            or message["id"]
+        )
+        unknown_scope = "unknown@" + hashlib.sha256(
+            str(unknown_context).encode()
+        ).hexdigest()[:16]
+
+        def assignment_scope(code):
+            return code or unknown_scope
+
         specs = {}
         for sentence in sentences(text):
             for match in re.finditer(
@@ -323,11 +535,17 @@ class Engine:
                     )
                 ]
                 local_course = codes[0] if len(codes) == 1 else course
-                key = (local_course or "unknown") + ":assignment:" + match[1]
+                key = (
+                    assignment_scope(local_course)
+                    + (":term:" + term.replace(" ", "_") if term else "")
+                    + ":assignment:" + match[1]
+                )
                 spec = specs.setdefault(
                     key,
                     {
                         "course": local_course,
+                        "number": match[1],
+                        "academic_term": term,
                         "title": (local_course + " " if local_course else "")
                         + "Assignment "
                         + match[1],
@@ -343,8 +561,15 @@ class Engine:
                     re.I,
                 )
             ):
-                specs[(course or "unknown") + ":assignment:" + number] = {
+                key = (
+                    assignment_scope(course)
+                    + (":term:" + term.replace(" ", "_") if term else "")
+                    + ":assignment:" + number
+                )
+                specs[key] = {
                     "course": course,
+                    "number": number,
+                    "academic_term": term,
                     "title": (course + " " if course else "") + "Assignment " + number,
                     "spans": [(0, len(text))],
                 }
@@ -362,10 +587,12 @@ class Engine:
                 or "Assignment to review"
             )
             specs[
-                (course or "unknown")
+                assignment_scope(course)
+                + (":term:" + term.replace(" ", "_") if term else "")
                 + ":task:"
                 + hashlib.sha256(title.lower().encode()).hexdigest()[:16]
-            ] = {"course": course, "title": title, "spans": [(0, len(text))]}
+            ] = {"course": course, "number": None, "academic_term": term,
+                 "title": title, "spans": [(0, len(text))]}
         task_keys = list(specs)
         resource_ids = list(message.get("attachment_resource_ids", []))
         for resource in result["resources"]:
@@ -422,14 +649,124 @@ class Engine:
                 for r in self.store.list(owner, "resource")
                 if itemkey in r.get("item_keys", [])
             ]
-            old = next(
-                (
-                    x
-                    for x in self.store.list(owner, "assignment")
-                    if x["source_key"] == itemkey
-                ),
-                None,
+            assignment_number = spec["number"]
+            all_assignments = self.store.list(owner, "assignment")
+            candidates = [
+                x for x in all_assignments
+                if x.get("course") == course
+                and (
+                    x.get("assignment_number") == assignment_number
+                    if assignment_number is not None
+                    else x.get("title") == spec["title"]
+                )
+                and (not term or x.get("academic_term") in (None, term))
+            ]
+            # Old records predate assignment_number. Their numbered source key
+            # is enough to consider them candidates, never enough to merge.
+            if assignment_number is not None:
+                candidates.extend(
+                    x for x in all_assignments
+                    if x not in candidates and x.get("course") == course
+                    and x["source_key"].endswith(":assignment:" + assignment_number)
+                    and (not term or x.get("academic_term") in (None, term))
+                )
+            assignment_update = any(
+                assignment_clause_matches(context, assignment_number, len(task_keys))
+                and (re.search(r"\b(?:rescheduled|extended|updated|corrected)\b",
+                               context, re.I)
+                     or cancellation_signal(context) != "none")
+                for left, right in spec["spans"]
+                for context in cancellation_clauses(text[left:right])
             )
+            if (
+                course is None and message.get("thread_id") and candidates
+                and not assignment_update
+                and all(x.get("source_thread_id")
+                        and x["source_thread_id"] != message["thread_id"]
+                        for x in candidates)
+            ):
+                candidates = []
+            old = next((x for x in candidates if x["source_key"] == itemkey), None)
+            if old is None:
+                same_evidence = [
+                    x for x in candidates if message["id"] in x.get("evidence_ids", [])
+                ]
+                if len(same_evidence) == 1:
+                    old = same_evidence[0]
+            if old is None and message.get("thread_id"):
+                same_thread = [
+                    x for x in candidates
+                    if x.get("source_thread_id") == message["thread_id"]
+                ]
+                if len(same_thread) == 1:
+                    old = same_thread[0]
+            thread_conflict = bool(
+                old and message.get("thread_id") and old.get("source_thread_id")
+                and message["thread_id"] != old["source_thread_id"]
+            )
+            year_conflict = bool(
+                old and message.get("sent_at") and old.get("source_sent_at")
+                and not term and message["sent_at"][:4] != old["source_sent_at"][:4]
+            )
+            term_conflict = bool(
+                old and (
+                    (not term and old.get("academic_term"))
+                    or (term and old.get("academic_term") is None
+                        and message["id"] not in old.get("evidence_ids", []))
+                )
+            )
+            legacy_identity_conflict = bool(
+                old and "assignment_number" not in old
+                and message["id"] not in old.get("evidence_ids", [])
+            )
+            target_key = itemkey
+            if (
+                (old is None and candidates) or thread_conflict or year_conflict
+                or term_conflict or legacy_identity_conflict
+            ):
+                choice_key = "assignment-match:" + message["id"] + ":" + itemkey
+                choice = self.occurrence_choice(
+                    owner, message, choice_key, "assignment", candidates,
+                    "Which assignment occurrence does this notice refer to?",
+                )
+                if choice is None:
+                    continue
+                if choice == "create_separate":
+                    old = None
+                    if any(x["source_key"] == itemkey for x in all_assignments):
+                        target_key = itemkey + ":source@" + hashlib.sha256(
+                            message["id"].encode()
+                        ).hexdigest()[:12]
+                        old = next(
+                            (x for x in all_assignments
+                             if x["source_key"] == target_key), None,
+                        )
+                else:
+                    old = choice
+            elif old:
+                target_key = old["source_key"]
+            cancellation_targeted = False
+            cancellation_ambiguous = False
+            for left, right in spec["spans"]:
+                for context in cancellation_clauses(text[left:right]):
+                    signal = cancellation_signal(context)
+                    if signal == "none":
+                        continue
+                    mentioned_numbers = set(ASSIGNMENT_NUMBER.findall(context))
+                    if mentioned_numbers and assignment_number not in mentioned_numbers:
+                        continue
+                    bare_number = bool(re.search(r"\b(?:and|,)\s*\d+\b", context, re.I))
+                    if signal == "ambiguous" or bare_number or len(mentioned_numbers) > 1:
+                        cancellation_ambiguous = True
+                    elif mentioned_numbers == {assignment_number} and assignment_number:
+                        cancellation_targeted = True
+                    elif (len(task_keys) == 1 and not mentioned_numbers
+                          and re.search(r"\b(?:assignment|homework|project)\b",
+                                        context, re.I)
+                          and (assignment_number is not None or old is not None)):
+                        cancellation_targeted = True
+                    else:
+                        cancellation_ambiguous = True
             dates = [
                 d
                 for d in result["dates"]
@@ -437,14 +774,39 @@ class Engine:
                 and d["role"] == "assignment_deadline"
                 and any(left <= d["start"] < right for left, right in spec["spans"])
             ]
+            if not dates and len(task_keys) == 1:
+                subject_candidates = [
+                    d for d in result["subject_dates"]
+                    if d["normalized"] and d["role"] == "assignment_deadline"
+                    and not d["needs_review"]
+                ]
+                if len(subject_candidates) == 1:
+                    dates = subject_candidates
             due_date = dates[-1]["normalized"] if dates else (old or {}).get("due_date")
             due_at = (old or {}).get("due_at") if not dates else None
-            if dates:
-                nearby = [
+            if dates and dates[-1].get("field") != "subject":
+                date_sentence = next(
+                    (s for s in sentences(text)
+                     if s.start() <= dates[-1]["start"] < s.end()), None
+                )
+                after = [
                     t
                     for t in result["times"]
                     if dates[-1]["end"] <= t["start"] < dates[-1]["end"] + 65
+                    and date_sentence is not None
+                    and t["end"] <= date_sentence.end()
                 ]
+                before = [
+                    t for t in result["times"]
+                    if 0 <= dates[-1]["start"] - t["end"] <= 65
+                    and date_sentence is not None
+                    and t["start"] >= date_sentence.start()
+                    and re.fullmatch(
+                        r"[\s,;]*(?:on|at|by)?[\s,;]*",
+                        text[t["end"] : dates[-1]["start"]], re.I,
+                    )
+                ]
+                nearby = after + before
                 if len(nearby) == 1:
                     zone = ZoneInfo(
                         next(iter(self.store.list(owner, "settings")), {}).get(
@@ -461,7 +823,31 @@ class Engine:
                 and self.source_rank(source_at)
                 < self.source_rank(old.get("latest_source_at"))
             )
-            if older:
+            date_stale = bool(dates and self.field_stale(old, "due_date", source_at))
+            previous_date_at = (old or {}).get("field_source_at", {}).get("due_date")
+            date_tie = bool(
+                old and dates and due_date != old.get("due_date")
+                and previous_date_at
+                and self.source_rank(source_at) == self.source_rank(previous_date_at)
+                and (old or {}).get("field_source_id", {}).get("due_date") != message["id"]
+            )
+            if date_tie:
+                self.review(
+                    owner, "field-conflict:" + old["id"] + ":due_date:" + message["id"],
+                    "Two sources at the same time disagree on this assignment deadline",
+                    old["id"], "due_date", [old.get("due_date"), due_date],
+                    context={"candidate": due_date, "message_id": message["id"]},
+                )
+            field_source_at = dict((old or {}).get("field_source_at", {}))
+            field_source_id = dict((old or {}).get("field_source_id", {}))
+            if old is None:
+                field_source_at["status"] = source_at
+            if dates and not date_stale and not date_tie:
+                field_source_at["due_date"] = source_at
+                field_source_id["due_date"] = message["id"]
+            if cancellation_targeted and not self.field_stale(old, "status", source_at):
+                field_source_at["status"] = source_at
+            if date_stale or date_tie:
                 due_date = old.get("due_date")
                 due_at = old.get("due_at")
             payload = {
@@ -471,7 +857,15 @@ class Engine:
                 + itemkey.rsplit(":", 1)[1],
                 "description": text,
                 "course": course,
+                "assignment_number": assignment_number,
+                "academic_term": (old or {}).get("academic_term") or term,
+                "source_sent_at": (old or {}).get("source_sent_at")
+                or message.get("sent_at"),
+                "source_thread_id": (old or {}).get("source_thread_id")
+                or message.get("thread_id"),
                 "due_date": due_date,
+                "field_source_at": field_source_at,
+                "field_source_id": field_source_id,
                 "date_precision": "date",
                 "importance": (old or {}).get("importance", "high"),
                 "relevance": "applicable" if course_known else "uncertain",
@@ -483,7 +877,7 @@ class Engine:
                     set((old or {}).get("evidence_ids", []) + [message["id"]])
                 ),
                 "status": "cancelled"
-                if re.search(r"\bcancelled\b", text, re.I)
+                if cancellation_targeted and not self.field_stale(old, "status", source_at)
                 else (old or {}).get("status", "open"),
             }
             payload.update(
@@ -496,28 +890,22 @@ class Engine:
             payload["title"] = spec["title"]
             if older:
                 payload.update(
-                    description=old.get("description"), status=old.get("status", "open")
+                    description=old.get("description")
                 )
-            for field, value in (old or {}).get("overrides", {}).items():
-                if payload.get(field) != value:
-                    self.review(
-                        owner,
-                        "changed:"
-                        + old["id"]
-                        + ":"
-                        + field
-                        + ":"
-                        + str(payload.get(field)),
-                        "New notice conflicts with your " + field,
-                        old["id"],
-                        field,
-                        context={
-                            "candidate": payload.get(field),
-                            "message_id": message["id"],
-                        },
-                    )
-                payload[field] = value
-            assignment = self.store.put(owner, "assignment", payload, itemkey)
+            payload = self.apply_entity_overrides(owner, old, payload, message["id"])
+            assignment = self.store.put(
+                owner, "assignment", payload, old["source_key"] if old else target_key
+            )
+            if cancellation_ambiguous and not cancellation_targeted and not older:
+                self.review(
+                    owner,
+                    "assignment-cancel:" + message["id"] + ":" + itemkey,
+                    "Is this assignment cancelled?",
+                    assignment["id"],
+                    "status",
+                    ["open", "cancelled"],
+                    context={"message_id": message["id"], "candidate_key": itemkey},
+                )
             if not course_known and not unrelated:
                 self.review(
                     owner,
@@ -540,6 +928,7 @@ class Engine:
                             {"status": "resolved_by_context", "answer": relevance},
                         )
         event_names = []
+        fallback_event_name = False
         course = result["courses"][0] if len(result["courses"]) == 1 else None
         course_known = bool(course and profile.get("enrollment:" + course))
         unrelated = bool(
@@ -551,17 +940,15 @@ class Engine:
             )
         )
         for sentence in sentences(text):
-            match = re.search(
-                r"\b([A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*){0,4} (?:Workshop|Meeting|Seminar|Webinar|Exam))\b",
-                sentence.group(),
-            )
-            if match:
-                event_names.append((match.group(1), sentence.group()))
+            for context in cancellation_clauses(sentence.group()):
+                event_names.extend((match.group(1), context)
+                                   for match in EVENT_NAME.finditer(context))
         if not event_names and re.search(
             r"\b(meeting|workshop|seminar|webinar|exam|examination|event)\b",
             subject + " " + text,
             re.I,
         ):
+            fallback_event_name = True
             event_names = [
                 (
                     re.sub(r"^(?:Re:|Fwd:)\s*", "", subject, flags=re.I)
@@ -570,7 +957,16 @@ class Engine:
                 )
             ]
         for title, context in event_names:
-            local = analyze(context, reference_date=message.get("sent_at"))
+            local = analyze(context, reference_date=relative_anchor,
+                            source_timezone=message.get("timezone"))
+            cancellation_kind = cancellation_signal(context)
+            cancellation_seen = cancellation_kind != "none"
+            event_cancelled = (
+                cancellation_kind == "positive"
+                and not fallback_event_name
+                and sum(1 for _, related_context in event_names if related_context == context) == 1
+            )
+            subject_date_used = False
             event_date = next(
                 (
                     d["normalized"]
@@ -581,33 +977,105 @@ class Engine:
                 ),
                 None,
             )
-            base = (course or "") + ":" + re.sub(r"^the\s+", "", title.lower().strip())
+            if event_date is None and len(event_names) == 1:
+                subject_candidates = [
+                    d for d in result["subject_dates"]
+                    if d["normalized"] and d["role"] in ("event_start", "exam_date")
+                    and not d["needs_review"]
+                ]
+                if len(subject_candidates) == 1:
+                    event_date = subject_candidates[0]["normalized"]
+                    subject_date_used = True
+            base = (
+                (course or "")
+                + (":term:" + term.replace(" ", "_") if term else "")
+                + ":" + re.sub(r"^the\s+", "", title.lower().strip())
+            )
             candidates = [
                 e
                 for e in self.store.list(owner, "event")
-                if e.get("base_key") == base or e["source_key"] == base
+                if e.get("course") == course
+                and e.get("title", "").casefold() == title.casefold()
+                and (not term or e.get("academic_term") in (None, term))
             ]
             old = next(
-                (e for e in candidates if event_date and e.get("date") == event_date),
+                (e for e in candidates if message["id"] in e.get("evidence_ids", [])),
                 None,
             )
+            if old is None:
+                old = next(
+                    (e for e in candidates if event_date and e.get("date") == event_date),
+                    None,
+                )
             updating = bool(
                 re.search(
-                    r"\b(rescheduled|extended|updated|cancelled|corrected)\b",
+                    r"\b(rescheduled|extended|updated|corrected)\b",
                     context,
                     re.I,
                 )
+                or cancellation_seen
             )
+            if updating and len(candidates) > 1 and not (
+                old and message["id"] in old.get("evidence_ids", [])
+            ):
+                same_thread = [
+                    e for e in candidates
+                    if message.get("thread_id")
+                    and e.get("source_thread_id") == message["thread_id"]
+                ]
+                if len(same_thread) == 1:
+                    old = same_thread[0]
+                else:
+                    old = None
             if old is None and len(candidates) == 1 and (updating or not event_date):
-                old = candidates[0]
-            if len(candidates) > 1 and updating and not event_date:
-                self.review(
-                    owner,
-                    "event-match:" + message["id"],
-                    "Which occurrence does this update refer to?",
-                    context={"message_id": message["id"]},
+                candidate = candidates[0]
+                old = candidate
+            thread_conflict = bool(
+                updating and old and message.get("thread_id")
+                and old.get("source_thread_id")
+                and message["thread_id"] != old["source_thread_id"]
+            )
+            term_missing_conflict = bool(updating and old and not term and old.get("academic_term"))
+            year_conflict = bool(
+                updating and old and not term and message.get("sent_at")
+                and old.get("source_sent_at")
+                and message["sent_at"][:4] != old["source_sent_at"][:4]
+            )
+            legacy_identity_conflict = bool(
+                updating and old and "academic_term" not in old
+                and message["id"] not in old.get("evidence_ids", [])
+            )
+            create_separate = False
+            if (
+                updating and old is None
+                or thread_conflict or term_missing_conflict or year_conflict
+                or legacy_identity_conflict
+                or updating and old and term and old.get("academic_term") is None
+            ):
+                choice_key = "event-match:" + message["id"] + ":" + base
+                choice = self.occurrence_choice(
+                    owner, message, choice_key, "event", candidates,
+                    "Which event occurrence does this update refer to?",
                 )
-                continue
+                if choice is None:
+                    continue
+                if choice == "create_separate":
+                    old = None
+                    create_separate = True
+                else:
+                    old = choice
+            elif old:
+                pending_key = "event-match:" + message["id"] + ":" + base
+                pending = next(
+                    (q for q in self.store.list(owner, "review")
+                     if q["source_key"] == pending_key and q["status"] == "open"),
+                    None,
+                )
+                if pending:
+                    self.store.patch(owner, pending["id"], {
+                        "status": "answered", "answer": "resolved_by_replay",
+                        "resolved_record_id": old["id"],
+                    })
             key = (
                 old["source_key"]
                 if old
@@ -615,12 +1083,43 @@ class Engine:
                 + ":"
                 + (event_date or message.get("thread_id") or message["id"])
             )
+            if create_separate:
+                key += ":source@" + hashlib.sha256(message["id"].encode()).hexdigest()[:12]
+                old = next(
+                    (e for e in candidates if e["source_key"] == key), None
+                )
             older = bool(
                 old
                 and self.source_rank(source_at)
                 < self.source_rank(old.get("latest_source_at"))
             )
-            if older:
+            date_asserted = bool(event_date)
+            date_stale = bool(date_asserted and self.field_stale(old, "date", source_at))
+            previous_date_at = (old or {}).get("field_source_at", {}).get("date")
+            date_tie = bool(
+                old and date_asserted and event_date != old.get("date")
+                and previous_date_at
+                and self.source_rank(source_at) == self.source_rank(previous_date_at)
+                and (old or {}).get("field_source_id", {}).get("date") != message["id"]
+            )
+            if date_tie:
+                self.review(
+                    owner, "field-conflict:" + old["id"] + ":date:" + message["id"],
+                    "Two sources at the same time disagree on this event date",
+                    old["id"], "date", [old.get("date"), event_date],
+                    context={"candidate": event_date, "message_id": message["id"]},
+                )
+            field_source_at = dict((old or {}).get("field_source_at", {}))
+            field_source_id = dict((old or {}).get("field_source_id", {}))
+            if old is None:
+                field_source_at["status"] = source_at
+            if date_asserted and not date_stale and not date_tie:
+                field_source_at["date"] = source_at
+                field_source_id["date"] = message["id"]
+            status_stale = self.field_stale(old, "status", source_at)
+            if event_cancelled and not status_stale:
+                field_source_at["status"] = source_at
+            if date_stale or date_tie:
                 event_date = old.get("date")
             compulsory = not unrelated and bool(
                 re.search(
@@ -636,7 +1135,7 @@ class Engine:
                         "timezone", "Asia/Kolkata"
                     )
                 )
-                if local["times"]:
+                if local["times"] and not subject_date_used:
                     left = datetime.combine(
                         date.fromisoformat(event_date),
                         time.fromisoformat(local["times"][0]["time"]),
@@ -654,60 +1153,76 @@ class Engine:
                         )
                         if right > left:
                             timing["end"] = right.isoformat()
-            event = self.store.put(
-                owner,
-                "event",
-                {
+            if date_stale or date_tie:
+                timing = {
+                    "start": old.get("start"), "end": old.get("end")
+                }
+            payload = {
                     **(old or {}),
                     **timing,
                     "title": title,
                     "course": course,
+                    "academic_term": (old or {}).get("academic_term") or term,
+                    "source_sent_at": (old or {}).get("source_sent_at")
+                    or message.get("sent_at"),
+                    "source_thread_id": (old or {}).get("source_thread_id")
+                    or message.get("thread_id"),
                     "date": event_date or (old or {}).get("date"),
-                    "date_precision": "datetime" if timing.get("start") else "date",
+                    "date_precision": (
+                        old.get("date_precision", "date") if old and (date_stale or date_tie or not date_asserted)
+                        else "datetime" if timing.get("start") else "date"
+                    ),
+                    "field_source_at": field_source_at,
+                    "field_source_id": field_source_id,
                     "description": context,
                     "importance": (old or {}).get(
                         "importance", "high" if compulsory else "medium"
                     ),
+                    "relevance": relevance if course else "potentially_relevant",
                     "participation": (old or {}).get(
                         "participation", "mandatory" if compulsory else "unknown"
                     ),
-                    "status": "cancelled"
-                    if re.search(r"\bcancelled\b", context, re.I)
-                    else "active",
+                    "status": (
+                        "cancelled" if event_cancelled and not status_stale
+                        else (old or {}).get("status", "active")
+                    ),
                     "resource_ids": sorted(
                         set((old or {}).get("resource_ids", []) + resource_ids)
                     ),
                     "evidence_ids": sorted(
                         set((old or {}).get("evidence_ids", []) + [message["id"]])
                     ),
-                },
-                key,
-            )
+                }
+            payload = self.apply_entity_overrides(owner, old, payload, message["id"])
+            event = self.store.put(owner, "event", payload, key)
             event = self.store.patch(
                 owner,
                 event["id"],
                 {
                     "base_key": base,
-                    "relevance": relevance if course else "potentially_relevant",
                     "latest_source_at": old.get("latest_source_at")
                     if older
                     else source_at,
                     **(
                         {
                             k: old.get(k)
-                            for k in (
-                                "start",
-                                "end",
-                                "date_precision",
-                                "description",
-                                "status",
-                            )
+                            for k in ("description",)
                         }
                         if older
                         else {}
                     ),
                 },
             )
+            if cancellation_seen and not event_cancelled and not older:
+                self.review(
+                    owner,
+                    "event-cancel:" + message["id"] + ":" + title,
+                    "Is this event cancelled?",
+                    event["id"],
+                    "status",
+                    ["active", "cancelled"],
+                    context={"message_id": message["id"], "candidate_title": title},
+                )
             if not compulsory and not unrelated and event["participation"] == "unknown":
                 self.review(
                     owner,
@@ -717,15 +1232,31 @@ class Engine:
                     "participation",
                     ["confirmed", "interested", "declined"],
                 )
-        for d in result["dates"]:
+        for d in result["dates"] + result["subject_dates"]:
             if d["needs_review"]:
+                key = (
+                    "subject:" + str(d["start"])
+                    if d.get("field") == "subject"
+                    else str(d["start"])
+                )
                 self.review(
                     owner,
-                    "date:" + message["id"] + ":" + str(d["start"]),
+                    "date:" + message["id"] + ":" + key,
                     "Clarify date: " + d["text"],
                     message["id"],
                     "date",
                     context=d,
                 )
+        for item in (result["date_ranges"] + result["subject_date_ranges"]
+                     + result["temporal_warnings"] + result["subject_temporal_warnings"]):
+            field = item.get("field", "text")
+            cue_hash = hashlib.sha256(item["text"].encode()).hexdigest()[:12]
+            self.review(
+                owner,
+                f"temporal:{message['id']}:{field}:{item['start']}:{item['end']}:{cue_hash}",
+                "Clarify temporal expression: " + item["text"],
+                message["id"],
+                context={**item, "field": field},
+            )
         self.store.patch(owner, message["id"], {"analysis": result})
         return result

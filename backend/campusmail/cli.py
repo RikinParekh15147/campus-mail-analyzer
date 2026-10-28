@@ -69,6 +69,21 @@ def main():
     train.add_argument(
         "--task", choices=["academic", "actionability"], default="academic"
     )
+    train.add_argument(
+        "--reservation",
+        type=Path,
+        default=PROJECT / "artifacts/research/data05-20261028-reserved-v2",
+    )
+    train.add_argument(
+        "--input-run",
+        type=Path,
+        default=PROJECT / "artifacts/research/data03-20261027-verified",
+    )
+    train.add_argument(
+        "--component-run",
+        type=Path,
+        default=PROJECT / "artifacts/research/data04-20261027-short",
+    )
     seed = sub.add_parser("import")
     seed.add_argument("--data-dir", default=str(PROJECT / "runtime"))
     seed.add_argument("--collection", choices=["scoped", "broad"], default="scoped")
@@ -210,14 +225,14 @@ def main():
             log_level="warning",
         )
     elif args.command == "train":
-        from .training import load_rows, train_models
+        from .training import load_reserved_development_rows, train_models
 
-        path = PROJECT / (
-            "dataset/mail/scoped_run/sanitized/documents.jsonl"
-            if args.task == "academic"
-            else "dataset/public/normalized/charlie9_verified.jsonl"
+        source = "scoped" if args.task == "academic" else "charlie9"
+        rows = load_reserved_development_rows(
+            PROJECT, args.task, source, args.reservation,
+            args.input_run, args.component_run,
         )
-        report = train_models(load_rows(path), PROJECT / "artifacts/models" / args.task)
+        report = train_models(rows, PROJECT / "artifacts/models" / args.task)
         print(
             json.dumps(
                 {

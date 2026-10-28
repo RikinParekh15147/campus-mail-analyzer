@@ -7,6 +7,8 @@ The installed corpus was audited on 27 October 2026. See the
 ignored `artifacts/research/`; source exports and private originals are immutable.
 The [DATA-04 leakage grouping guide](LEAKAGE_GROUPING.md) explains trusted
 components, conservative split guards and private membership artifacts.
+The [DATA-06 draft annotation guide](ANNOTATION_GUIDE.md) defines the current
+development pilot review rules. Private pilot forms remain in ignored artifacts.
 
 All project research inputs are now under this directory. No source records were discarded.
 

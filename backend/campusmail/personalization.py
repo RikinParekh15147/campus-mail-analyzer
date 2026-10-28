@@ -1,6 +1,7 @@
 from datetime import date
 import re
 from .store import Conflict
+from .reconciliation import align_date_times
 
 ALLOWED = {
     "importance": {"high", "medium", "low"},
@@ -59,11 +60,15 @@ class Personalizer:
         if field in record.get("overrides", {}) and record["overrides"][field] == value:
             return record
         old_value = record.get(field)
+        date_changes = (
+            align_date_times(record, field, value)
+            if field in ("due_date", "date") else {field: value}
+        )
         updated = self.store.patch(
             owner,
             record_id,
             {
-                field: value,
+                **date_changes,
                 "overrides": {**record.get("overrides", {}), field: value},
                 **({"status": "confirmed"} if record["kind"] == "profile_fact" else {}),
                 **(
@@ -155,6 +160,41 @@ class Personalizer:
         if question.get("record_id"):
             field = question.get("field")
             record = self.store.get(owner, question["record_id"])
+            if field == "occurrence" and record["kind"] == "message":
+                choices = question.get("choices", [])
+                if value not in choices:
+                    raise ValueError("Select one listed occurrence choice")
+                context = question.get("context", {})
+                candidates = context.get("candidate_ids", [])
+                if value == "create_separate":
+                    selected = value
+                else:
+                    index = choices.index(value)
+                    if index >= len(candidates):
+                        raise ValueError("Occurrence choice has no target")
+                    target = self.store.get(owner, candidates[index])
+                    if target["kind"] != context.get("candidate_kind"):
+                        raise ValueError("Occurrence target kind changed")
+                    selected = target["id"]
+                decision_key = context.get("decision_key")
+                if not isinstance(decision_key, str) or not decision_key:
+                    raise ValueError("Occurrence decision key is missing")
+                self.store.patch(
+                    owner,
+                    record["id"],
+                    {"occurrence_decisions": {
+                        **record.get("occurrence_decisions", {}),
+                        decision_key: selected,
+                    }},
+                )
+                self.store.put(
+                    owner, "feedback",
+                    {"record_id": record["id"], "field": "occurrence",
+                     "value": selected, "scope": "personal_only", "weight": 2},
+                )
+                return self.store.patch(
+                    owner, question_id, {"status": "answered", "answer": value}
+                )
             if field == "date" and record["kind"] == "message":
                 correction = (
                     value
@@ -176,6 +216,8 @@ class Personalizer:
                 ):
                     raise ValueError("Select the date role")
                 start = str(question["context"]["start"])
+                if question["context"].get("field") == "subject":
+                    start = "subject:" + start
                 self.store.patch(
                     owner,
                     record["id"],

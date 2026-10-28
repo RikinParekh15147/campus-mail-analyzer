@@ -5,7 +5,10 @@ from email.utils import getaddresses
 from urllib.parse import quote
 from pathlib import Path
 from .documents import VisibleText
-from .dataset_import import import_dataset, _dataset_source_key
+from .dataset_import import (
+    import_dataset as import_dataset,
+    _dataset_source_key as _dataset_source_key,
+)
 
 
 def decode(data):
@@ -48,23 +51,30 @@ def parse_message(raw):
         parser = VisibleText()
         parser.feed("\n".join(markup))
         text = "".join(parser.parts)
-    stamp = None
+    received = None
     try:
-        stamp = (
-            datetime.fromtimestamp(
+        if raw.get("internalDate"):
+            received = datetime.fromtimestamp(
                 int(raw["internalDate"]) / 1000, timezone.utc
-            ).isoformat()
-            if raw.get("internalDate")
-            else parsedate_to_datetime(headers["date"]).isoformat()
-        )
-    except (KeyError, ValueError, TypeError):
+            )
+    except (ValueError, TypeError, OverflowError):
         pass
+    authored = None
+    try:
+        candidate = parsedate_to_datetime(headers["date"])
+        if candidate.tzinfo is not None and candidate.utcoffset() is not None:
+            authored = candidate
+    except (KeyError, ValueError, TypeError, OverflowError):
+        pass
+    stamp = authored or received
     return {
         "provider_id": raw["id"],
         "thread_id": raw.get("threadId"),
         "subject": headers.get("subject", ""),
         "text": text,
-        "sent_at": stamp,
+        "sent_at": stamp.isoformat() if stamp else None,
+        "received_at": received.isoformat() if received else None,
+        "relative_reference_trusted": authored is not None,
         "sender": headers.get("from", ""),
         "to": headers.get("to", ""),
         "cc": headers.get("cc", ""),
@@ -113,7 +123,15 @@ class GmailSync:
                 s.lower() in parsed["sender"].lower() for s in self.scope["senders"]
             ):
                 return
-        record = self.store.put(self.owner, "message", parsed, "gmail:" + raw["id"])
+        source_key = "gmail:" + raw["id"]
+        old = next(
+            (m for m in self.store.list(self.owner, "message")
+             if m["source_key"] == source_key),
+            None,
+        )
+        if old and old.get("text") == parsed["text"] and old.get("subject") == parsed["subject"]:
+            parsed = {**old, **parsed}
+        record = self.store.put(self.owner, "message", parsed, source_key)
         if self.on_message:
             self.on_message(self.owner, record)
 

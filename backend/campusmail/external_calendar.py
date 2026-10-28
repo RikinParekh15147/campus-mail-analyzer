@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import quote
 import hashlib
 from .engine import Engine
@@ -20,6 +20,50 @@ class CalendarSync:
             self.owner, "managed_calendar", {"provider_id": remote["id"]}, "managed"
         )
         return remote["id"]
+
+    @staticmethod
+    def eligible(item):
+        if item.get("status") in ("cancelled", "complete", "deleted"):
+            return False
+        if item["kind"] == "event":
+            allowed = item.get("participation") in ("confirmed", "mandatory")
+            schedulable = bool(
+                item.get("date") or item.get("start") and item.get("end")
+            )
+        elif item["kind"] == "assignment":
+            allowed = item.get("relevance") == "applicable"
+            schedulable = bool(item.get("due_date"))
+        else:
+            return False
+        return allowed and schedulable
+
+    def unexport(self, mapping):
+        if mapping["owner_id"] != self.owner or mapping["kind"] != "calendar_mapping":
+            raise ValueError("Account or mapping mismatch")
+        if mapping.get("status") == "deleted":
+            return mapping
+        path = (
+            "calendars/" + quote(mapping["calendar_id"], safe="")
+            + "/events/" + mapping["provider_id"]
+        )
+        try:
+            self.api.delete(path)
+        except LookupError:
+            pass
+        return self.store.patch(self.owner, mapping["id"], {"status": "deleted"})
+
+    def reconcile_managed(self, items, calendar_id):
+        """Export current eligible records and remove stale managed commitments."""
+        eligible = {item["id"]: item for item in items if self.eligible(item)}
+        for item in eligible.values():
+            self.export(item, calendar_id)
+        for mapping in self.store.list(self.owner, "calendar_mapping"):
+            if (
+                mapping.get("calendar_id") == calendar_id
+                and mapping.get("status") == "active"
+                and mapping.get("record_id") not in eligible
+            ):
+                self.unexport(mapping)
 
     def export(self, item, calendar_id):
         if item["owner_id"] != self.owner:
@@ -44,11 +88,17 @@ class CalendarSync:
                 item["id"],
             )
         day = item.get("due_date") or item.get("date")
-        if not day and not item.get("start"):
+        if not day and not (item.get("start") and item.get("end")):
             raise ValueError("Resolve event date before exporting")
         if item.get("start") and item.get("end"):
             start = {"dateTime": item["start"]}
             end = {"dateTime": item["end"]}
+        elif item["kind"] == "assignment" and item.get("due_at"):
+            due = datetime.fromisoformat(item["due_at"].replace("Z", "+00:00"))
+            if due.tzinfo is None:
+                raise ValueError("Timed deadline needs a timezone")
+            start = {"dateTime": due.isoformat()}
+            end = {"dateTime": (due + timedelta(minutes=1)).isoformat()}
         else:
             start = {"date": day}
             end = {"date": (date.fromisoformat(day) + timedelta(days=1)).isoformat()}
@@ -57,8 +107,14 @@ class CalendarSync:
             "summary": item["title"],
             "start": start,
             "end": end,
-            "transparency": "opaque" if "dateTime" in start else "transparent",
-            "description": "Managed by Campus Mail Analyser. Refer to the original notice for official details.",
+            "transparency": (
+                "opaque" if item["kind"] == "event" and "dateTime" in start
+                else "transparent"
+            ),
+            "description": (
+                "Deadline marker; does not block time. "
+                if item["kind"] == "assignment" else ""
+            ) + "Managed by Campus Mail Analyser. Refer to the original notice for official details.",
             "extendedProperties": {"private": {"campusmail_source": item["id"]}},
         }
         mapping = next(
@@ -77,14 +133,16 @@ class CalendarSync:
                 and mapping.get("remote_updated")
                 and remote["updated"] != mapping["remote_updated"]
             ):
-                Engine(self.store).review(
+                question = Engine(self.store).review(
                     self.owner,
                     "remote-edit:" + item["id"] + ":" + remote["updated"],
                     "Google Calendar changed this item; review before replacing it",
                     item["id"],
+                    choices=["keep_remote", "replace_remote"],
                     context={"remote": remote},
                 )
-                return mapping
+                if question.get("answer") != "replace_remote":
+                    return mapping
             if not mapping or mapping.get("local_revision") != item["revision"]:
                 remote = self.api.patch(
                     path, json={k: v for k, v in payload.items() if k != "id"}

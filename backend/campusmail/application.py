@@ -1,5 +1,5 @@
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import base64
 import hashlib
 import json
@@ -48,6 +48,21 @@ class Application:
         }
 
     def process(self, owner, message):
+        current = self.store.get(owner, message["id"])
+        if current["kind"] != "message":
+            raise ValueError("Only messages can be processed")
+        current = self.store.patch(owner, current["id"], {
+            "processing_status": "pending",
+            "processing_lease_until": (
+                datetime.now(timezone.utc) + timedelta(minutes=15)
+            ).isoformat(),
+        })
+        self._process_message(owner, current)
+        self.store.patch(owner, current["id"], {
+            "processing_status": "complete", "processing_lease_until": None,
+        })
+
+    def _process_message(self, owner, message):
         if not message.get("text", "").strip():
             self.store.patch(
                 owner,
@@ -138,10 +153,20 @@ class Application:
     def ingest(self, owner, text, subject="", reference_date=None, source_key=None):
         if not text.strip():
             raise ValueError("Paste readable notice text")
+        old = next(
+            (m for m in self.store.list(owner, "message")
+             if source_key and m["source_key"] == source_key),
+            None,
+        )
+        retained = (
+            {k: old[k] for k in ("date_corrections", "occurrence_decisions") if k in old}
+            if old and old.get("text") == text and old.get("subject") == subject
+            else {}
+        )
         message = self.store.put(
             owner,
             "message",
-            {"text": text, "subject": subject, "sent_at": reference_date},
+            {"text": text, "subject": subject, "sent_at": reference_date, **retained},
             source_key,
         )
         self.process(owner, message)
@@ -305,15 +330,7 @@ class Application:
         for calendar_id in self.settings(owner).get("calendar_ids", ["primary"]):
             sync.pull(calendar_id)
         managed = sync.managed_calendar()
-        for item in self.store.list(owner):
-            if (
-                item["kind"] == "event"
-                and item.get("participation") in ("confirmed", "mandatory")
-                or item["kind"] == "assignment"
-                and item.get("relevance") == "applicable"
-            ):
-                if item.get("date") or item.get("due_date") or item.get("start"):
-                    sync.export(item, managed)
+        sync.reconcile_managed(self.store.list(owner), managed)
 
     def connect(self, owner, payload):
         service = payload["service"]
@@ -325,8 +342,29 @@ class Application:
     def reprocess(self, owner, payload):
         for message in self.store.list(owner, "message"):
             self.process(owner, message)
+        self.reminders.refresh(owner)
+
+    def recover_message(self, owner, payload):
+        message = self.store.get(owner, payload["message_id"])
+        if message.get("processing_status") != "pending":
+            return
+        self.process(owner, message)
+        self.reminders.refresh(owner)
 
     def run_jobs(self):
+        now = datetime.now(timezone.utc).isoformat()
+        for user in self.store.users():
+            owner = user["id"]
+            for message in self.store.list(owner, "message"):
+                if (
+                    message.get("processing_status") == "pending"
+                    and (not message.get("processing_lease_until")
+                         or message["processing_lease_until"] <= now)
+                ):
+                    self.queue.enqueue(
+                        owner, "recover_message", {"message_id": message["id"]},
+                        "recover-message:" + message["id"], revive_complete=True,
+                    )
         return self.queue.run_once(
             {
                 "import": self.import_collection,
@@ -334,6 +372,7 @@ class Application:
                 "calendar_sync": self.calendar_sync,
                 "connect": self.connect,
                 "reprocess": self.reprocess,
+                "recover_message": self.recover_message,
             }
         )
 

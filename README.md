@@ -106,6 +106,9 @@ Linux/WSL:
 
 ```bash
 bash scripts/setup.sh
+.venv/bin/python scripts/prepare_research_data.py --output-dir artifacts/research/data03-20261027-verified
+.venv/bin/python scripts/build_leakage_components.py --input-run artifacts/research/data03-20261027-verified --output-dir artifacts/research/data04-20261027-short
+.venv/bin/python scripts/reserve_research_splits.py --input-run artifacts/research/data03-20261027-verified --component-run artifacts/research/data04-20261027-short --output-dir artifacts/research/data05-20261028-reserved-v2
 .venv/bin/python -m campusmail train --task academic
 .venv/bin/python -m campusmail train --task actionability
 .venv/bin/python -m campusmail import --collection scoped --limit 50 --profile "My campus"
@@ -116,6 +119,9 @@ Windows PowerShell:
 
 ```powershell
 .\scripts\setup.ps1
+.\.venv-win\Scripts\python.exe scripts/prepare_research_data.py --output-dir artifacts/research/data03-20261027-verified
+.\.venv-win\Scripts\python.exe scripts/build_leakage_components.py --input-run artifacts/research/data03-20261027-verified --output-dir artifacts/research/data04-20261027-short
+.\.venv-win\Scripts\python.exe scripts/reserve_research_splits.py --input-run artifacts/research/data03-20261027-verified --component-run artifacts/research/data04-20261027-short --output-dir artifacts/research/data05-20261028-reserved-v2
 .\.venv-win\Scripts\python.exe -m campusmail train --task academic
 .\.venv-win\Scripts\python.exe -m campusmail train --task actionability
 .\.venv-win\Scripts\python.exe -m campusmail import --collection scoped --limit 50 --profile "My campus"
@@ -179,7 +185,33 @@ npx playwright test tests/desktop.spec.cjs --workers=1
 
 The Electron test uses a temporary profile and real Python API. It does not connect Google, send mail, access private dataset contents, or call an AI provider. On this WSL system, pass the local `runtime/linux-deps/root/usr/lib/x86_64-linux-gnu` directory through `LD_LIBRARY_PATH` when running Playwright directly. Playwright disables Chromium's sandbox for its test process; the normal application keeps renderer sandboxing and context isolation enabled.
 
-Research artifacts are in ignored `artifacts/models/`. Academic training uses the scoped designated mail research export; public actionability uses Charlie9, not a random merge with overlapping Parakweet data. Unknown-license university PDFs remain quarantined and are not automatically trained on. The current academic split has 438 labeled examples; the actionability split has 3,655. Source/weak-label agreement is preliminary, not a reviewed gold benchmark. Pipelines fit TF-IDF on training data only; duplicate/source groups do not cross the holdout boundary. SVM is a predeclared deployment choice, not selected by repeatedly tuning on the final test set.
+Research artifacts are in ignored `artifacts/models/`. Build each research run in a new directory; the names above are the accepted local run names and must be replaced if those directories already exist. Training now reads only the DATA-05 development allocation from the pinned v2 exports. Academic training uses scoped mail; actionability uses Charlie9. Broad mail is an overlapping alternative, Parakweet has conflicting alternative annotations, and Durg remains quarantined. The frozen holdout is excluded. These remain source/weak labels, not reviewed gold; fitting a model does not establish improved accuracy. Pipelines fit TF-IDF on training data only and use whole provisional split guards. SVM is a predeclared deployment choice until a reviewed benchmark supports promotion.
+
+For a reviewed rules-only development run, prepare an adjudicated v2 JSONL
+using the blinded DATA-05 review IDs. Hash it with `shasum -a 256`, then freeze
+the selection against the accepted private DATA-05 identity map and guard
+allocation. Hash the resulting selection file before running the baseline:
+
+```bash
+.venv/bin/python scripts/freeze_development_selection.py --input REVIEWED.jsonl --input-sha256 INPUT_HASH --output-name reviewed-v1
+.venv/bin/python scripts/run_development_experiment.py --input REVIEWED.jsonl --selection artifacts/research/experiments/protocols/reviewed-v1.json --input-sha256 INPUT_HASH --selection-sha256 SELECTION_HASH --output-name baseline-rules
+```
+
+The runner writes private predictions and metrics under
+`artifacts/research/experiments/baseline-rules/RUN_ID` and refuses to overwrite
+an existing run. It requires at least one completely human-reviewed task; the
+current DATA-06 pilot has no completed human forms, so no reviewed run exists yet.
+
+For reviewed entity and date labels, run the application replay evaluator on
+the same pinned development selection:
+
+```bash
+.venv/bin/python scripts/run_runtime_development_eval.py --input REVIEWED.jsonl --selection artifacts/research/experiments/protocols/reviewed-v1.json --input-sha256 INPUT_HASH --selection-sha256 SELECTION_HASH
+```
+
+Its aggregate private report counts wrong-target mutations and other runtime
+errors. The [runtime mapping](dataset/RUNTIME_EVAL_MAPPING.md) defines the
+supported one- and two-notice cases and explicit exclusions.
 
 ## Layout and data boundaries
 

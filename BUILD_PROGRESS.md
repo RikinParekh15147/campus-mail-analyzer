@@ -1,5 +1,186 @@
 # Build progress
 
+## Cancellation targeting accepted — 28 October 2026
+
+Assignment and event cancellation now uses local clauses and named targets.
+Negated, hedged, listed and generic ambiguity routes to review. Candidate
+status decisions survive replay, and canceled events leave calendar and
+pending reminders. Ten focused tests and the 240-test portable suite passed;
+one private-data test was deselected. FIX-04 is accepted at fixture level.
+See [cancellation acceptance](reports/FIX04_ACCEPTANCE.md).
+
+## Temporal candidate coverage accepted — 28 October 2026
+
+Added exact-span same-month date ranges, overlap suppression, and review for
+cross-month/missing-year ranges, ambiguous time ranges, time-only deadlines
+and unsupported relative cues. Subject and body warnings keep separate offsets;
+range endpoints never silently become deadlines. Eighteen focused tests and
+the 230-test portable suite passed; one private-data test was deselected.
+FIX-02 is accepted at fixture level. See
+[temporal candidate acceptance](reports/FIX02_ACCEPTANCE.md).
+
+## Relative-date source anchoring accepted — 28 October 2026
+
+Gmail authored dates now anchor relative text only when the header has an
+explicit offset; receipt-only timestamps go to review. Historical imports and
+attachment analysis carry source timezones and reference trust, including
+legacy reimport/replay recovery. Six focused regressions and the 212-test
+portable suite passed; one private-data test was deselected. FIX-03 is accepted
+at fixture level; FIX-02 candidate coverage was accepted in the later slice above. See
+[relative-date acceptance](reports/FIX03_ACCEPTANCE.md).
+
+## Two-notice runtime evaluation increment — 28 October 2026
+
+Added conservative reviewed update/correction pairs to the EVAL-03 adapter,
+wrong-target mutation checks, and a private CLI that verifies the pinned
+EVAL-01 selection before application replay. Longer chains and unsupported
+links are reported as exclusions. Six new synthetic tests and the 206-test
+portable suite passed; one private-data test was deselected. EVAL-03 remains
+open until reviewed development labels support a real run. See
+[runtime evaluation progress](reports/EVAL03_PROGRESS.md).
+
+## Reviewed development protocol increment — 28 October 2026
+
+Pinned the accepted DATA-05 reservation and added blinded-ID-to-guard
+verification, deterministic whole-guard development folds, and class/group
+support reporting. The experiment runner now requires that verified v2
+selection for research runs; v1 selections are fixture-only. The installed
+reservation reconciled 7,859 guards and 189 blinded development IDs. Four
+protocol tests and the 200-test portable suite passed; one private-data test
+was deselected. EVAL-01 stays open until DATA-06 review creates real class
+support and fold evidence. See [protocol progress](reports/EVAL01_PROGRESS.md).
+
+## Reproducible development runner accepted — 28 October 2026
+
+Added a pinned rules-only experiment runner and CLI. It validates a development
+selection against document/guard IDs, refuses held-out guards and unreviewed
+research input, records code, preprocessing, Python and dependency identities,
+and publishes owner-only predictions/metrics under a content-derived run ID.
+Fixture reruns reproduce byte-for-byte; an existing run cannot be overwritten.
+Six focused runner tests and 200 portable tests passed; one private-data test was
+deselected. EVAL-05 is accepted as tooling; DATA-06 review and the EVAL-03/06
+reviewed baseline are still pending. See [runner acceptance](reports/EVAL05_ACCEPTANCE.md).
+
+## End-to-end evaluation tooling increment — 28 October 2026
+
+Added an isolated rules-only runtime replay scorer for entity/evidence errors,
+action status, reply state, review prompts, calendar entries and reminders.
+Nine synthetic tests and the full portable suite passed (190 tests; one
+private-data test deselected). A conservative double-reviewed v2 adapter now
+prepares single-notice cases and reports unsupported links. EVAL-03 remains
+open for multi-notice mapping and an actual development run. See
+[evaluation progress](reports/EVAL03_PROGRESS.md).
+
+## Component scoring infrastructure accepted — 28 October 2026
+
+The completeness-aware v2 scorer now validates predicted evidence for every
+included document, counts duplicate predictions, and excludes unreviewed tasks
+from gold denominators. Four synthetic contract tests and the full portable
+suite passed (181 tests; one private-data test deselected). EVAL-02 is accepted
+as tooling; DATA-06 still has zero completed human pilot reviews and no reviewed
+accuracy exists. See [scorer acceptance](reports/EVAL02_ACCEPTANCE.md).
+
+## Queue and direct recovery accepted — 28 October 2026
+
+Legacy running jobs without leases are recoverable, revision-checked final
+writes prevent an old worker from replacing a newer lease result, and a
+heartbeat renews long-running work. A failure injected between message updates
+converged after restart with one assignment and current reminders. Five focused
+tests plus Gmail/Calendar external retry checks passed. Direct application
+processing now keeps a pending marker until completion; the worker recovers
+expired markers after a crash and refreshes reminders. The full portable suite
+passed (177 tests; one private-data test deselected). OPS-03 is accepted for
+fixture failure paths. See [restart acceptance](reports/OPS03_PROGRESS.md).
+
+## Replay consistency accepted — 28 October 2026
+
+Identical attachment bytes retain separate parent analysis messages and source
+timestamps while sharing one blob. Duplicate application reimports preserve
+reviewed decisions; equal-time date disagreements require review. Reverse-order
+event replay converges, old pending reminders are cancelled after refresh, and
+managed-calendar mappings are reconciled when eligibility changes. The portable
+suite passed 168 tests. FIX-07 is accepted for supported fixture replay; OPS-03
+still owns fault-injected restart behavior. See [replay acceptance](reports/FIX07_PROGRESS.md)
+and [schedule progress](reports/APP03_PROGRESS.md).
+
+Timed assignment deadlines export as transparent one-minute markers at the due
+time, while untimed deadlines remain transparent all-day markers. Remote edits
+require an explicit keep-or-replace review decision. APP-03 is accepted at
+fixture level; real-provider acceptance remains in the environment/release
+gates.
+
+## Field reconciliation accepted — 28 October 2026
+
+Assignment and event date/status precedence uses field assertion times.
+Manual overrides survive replay with explicit conflict choices, and manual
+dates move associated time instants to the corrected calendar day. Seven
+focused tests and the full portable suite passed (163 tests; one private-data
+test deselected). FIX-06 is accepted at fixture level. See
+[reconciliation acceptance](reports/FIX06_PROGRESS.md).
+
+## Occurrence identity accepted — 28 October 2026
+
+Unknown-course numbered assignments now use a thread/source-scoped key.
+Known cross-thread assignment updates and ambiguous same-title event updates
+go to review instead of silently merging or creating another authoritative
+occurrence. Explicit terms, legacy candidate review, stored decisions and
+replay/API resolution are covered by 16 focused tests; the portable suite
+passed 153 tests. FIX-05 is accepted at fixture level. No measured accuracy
+gain is claimed. See [identity acceptance](reports/FIX05_PROGRESS.md).
+
+## Sentence and clause boundary increment — 28 October 2026
+
+Replaced punctuation-only sentence matching with source-aligned spans that
+preserve URLs, decimals and common abbreviations. Action rules now evaluate
+contrasting clauses separately so a completed action does not hide a later
+unfinished obligation. FIX-01 remains open for regression and real-data
+verification. See [boundary progress](reports/FIX01_PROGRESS.md).
+
+## Assignment cancellation scoping increment — 28 October 2026
+
+An assignment now requires local cancellation evidence before its status
+changes; multi-assignment ambiguity creates review instead of cancelling all
+items. Named-event cancellation is scoped to a unique event sentence; generic
+or multi-event notices create review. FIX-04 was still open at this stage for
+clause resolution and replay verification; the later acceptance appears above.
+See [scoping progress](reports/FIX04_PROGRESS.md).
+
+## Temporal parser correctness increment — 28 October 2026
+
+Added month-first date parsing, mixed AM/PM plus 24-hour time collection,
+field-specific subject-date evidence and guarded single-target subject-date
+use. Relative dates require timezone-aware source timestamps, including for
+readable attachment analysis. Deadline times before dates can link within the
+same sentence. FIX-02 and FIX-03 remain open because ranges, ambiguous
+multi-target links and replay verification are unfinished. See
+[temporal progress](reports/FIX02_FIX03_PROGRESS.md).
+
+## DATA-06 pilot prepared, human review pending — 28 October 2026
+
+Drafted the annotation guide and generated two independent blank forms for
+50 available-text notices from 50 development guards. The private pilot is
+balanced across linked, short, ordinary and long text, with pinned pack/guide
+hashes. Added a strict form audit and completeness-aware component scoring core;
+the initial audit correctly reports zero reviewed rows. No reviewer filled a
+form or adjudicated labels yet. Development-only weak-label models were trained
+from reserved rows, but a fabricated assignment was misclassified; those models
+remain research candidates and the app stays in rules-only mode. DATA-06,
+EVAL-02 and EVAL-06 stay open. See
+[tooling progress](reports/DATA06_EVAL02_TOOLING_PROGRESS.md).
+
+## DATA-05 reservation and DATA-09 source boundaries — 28 October 2026
+
+Reserved all 7,859 provisional split guards with a fixed, score-independent
+policy. The ignored private run `data05-20261028-reserved-v2` assigns 6,273
+guards to development and 1,586 to sealed holdout. A blinded scoped review
+pack contains 189 rows (151 available-text, 38 context-only) from 84 complete
+guards; a separate ID-only queue selects 30 holdout guards. A post-publication
+check verified all 17,291 memberships, hashes, pack mappings and disjointness.
+Training now loads only pinned development rows from scoped mail or Charlie9;
+broad mail, Parakweet and quarantined Durg are not pooled into the default
+models. No model was trained or accuracy measured. DATA-06 annotation and
+reviewed labels are next. See [reservation acceptance](reports/DATA05_RESERVATION_ACCEPTANCE.md).
+
 ## DATA-04 leakage components accepted — 27 October 2026
 
 Built pinned, private membership for all 17,291 records: 8,068 trusted components
