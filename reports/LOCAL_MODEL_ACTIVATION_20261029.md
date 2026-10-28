@@ -1,0 +1,9 @@
+# Local model activation — 29 October 2026
+
+The accepted DATA-05 development allocation trained plain academic and actionability classifiers from 286 scoped source-labeled academic rows (144 guards) and 2,905 Charlie9 source-labeled actionability rows (2,890 guards). The saved linear SVM grouped-split macro-F1 values are 0.512 and 0.793, respectively. These are weak/source-label agreement, **not reviewed accuracy**. Academic `nonacademic_other` has only two rows.
+
+Both plain `classifier.joblib` files are explicitly active with checksums, preprocessing version and scikit-learn version verified before deserialization. The academic active revision is `plain-6745627b33d4ddb8c0ec1397`; actionability is `plain-ceeb79297c81de44fb264c45`. The original academic bundle `weak-09c098b2b335b24d3c254049` and corrected-taxonomy actionability bundle `weak-8f9d6355dea00aecae1ba0b0-taxonomy-v2` are verified standby fallbacks. A valid plain model takes precedence; if its files fail verification, the matching active bundle is used. The two activation mechanisms are reported separately in model health.
+
+The plain academic model disagreed with an obvious assignment sample. For plain and weak bundle models, an explicit category rule wins over a conflicting prediction; the analysis method records `local_rules_model_disagreement` and the model revision remains visible. This is a local safety guard, not a measured accuracy improvement.
+
+Verification: a temporary-profile API ingestion returned category `assignments`, verified plain academic revision and verified plain actionability revision. The portable Python suite passed **281 tests**, one private-data test deselected; scoped Ruff and diff checks passed. The frontend built, and the real isolated Electron workflow passed with both models active. Campus Mail was launched from `npm --prefix desktop start` and remains open at the profile welcome screen. Existing runtime profiles were not edited by these checks.

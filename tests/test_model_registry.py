@@ -5,7 +5,8 @@ import json
 import pytest
 
 from campusmail.model_registry import (
-    model_health, promote_bundle, rollback_bundle, seal_bundle, verify_bundle,
+    activate_plain_model, model_health, promote_bundle, rollback_bundle,
+    seal_bundle, verify_bundle,
 )
 
 
@@ -180,3 +181,59 @@ def test_models_api_exposes_rules_only_health_without_legacy_scores(tmp_path):
                              json={"subject": "Assignment 2", "text": "Submit tomorrow."})
         assert notice.status_code == 200
         assert notice.json()["analysis"]["classification_method"] == "local_rules"
+
+
+def test_plain_activation_checks_hash_and_prefers_explicit_rule_on_conflict(tmp_path):
+    import joblib
+    from sklearn.dummy import DummyClassifier
+
+    from campusmail.nlp import analyze
+    from campusmail.preprocessing import PREPROCESSING_VERSION
+    import sklearn
+
+    task_dir = tmp_path / "academic"
+    task_dir.mkdir()
+    model = DummyClassifier(strategy="constant", constant="workshops_events")
+    from campusmail.models import CATEGORIES
+    model.fit([str(index) for index in range(len(CATEGORIES))], list(CATEGORIES))
+    joblib.dump(model, task_dir / "classifier.joblib")
+    (task_dir / "metrics.json").write_text(json.dumps({
+        "preprocessing_version": PREPROCESSING_VERSION,
+        "sklearn_version": sklearn.__version__, "selected": "linear_svm",
+        "evaluation_scope": "development_only_source_or_weak_labels",
+        "dataset_sha256": "fixture", "labels": sorted(CATEGORIES),
+    }))
+    activation = activate_plain_model(task_dir, task="academic")
+    assert activation["model_revision"].startswith("plain-")
+    assert model_health(task_dir, task="academic")["activation_kind"] == "plain"
+    result = analyze("Assignment 2 must be submitted today.",
+                     model_path=task_dir / "classifier.joblib")
+    assert result["category"] == "assignments"
+    assert result["classification_method"] == "local_rules_model_disagreement"
+    assert result["model_health"] == "verified"
+    assert result["model_bundle_id"] is None
+    original = (task_dir / "classifier.joblib").read_bytes()
+    (task_dir / "classifier.joblib").write_bytes(b"corrupt")
+    fallback = analyze("Assignment 2 must be submitted today.",
+                       model_path=task_dir / "classifier.joblib")
+    assert fallback["classification_method"] == "local_rules"
+    assert fallback["model_health"] == "invalid_or_unavailable"
+    (task_dir / "classifier.joblib").write_bytes(original)
+
+    backup = task_dir / "bundles/weak-backup"
+    backup.mkdir(parents=True)
+    joblib.dump(model, backup / "classifier.joblib")
+    (backup / "metrics.json").write_text("{}")
+    digest = seal_bundle(backup, task="academic", model_revision="weak-backup",
+                         thresholds={})
+    promote_bundle(task_dir, task="academic", bundle_id="weak-backup",
+                   manifest_sha256=digest, expected_revision=0)
+    assert model_health(task_dir, task="academic")["activation_kind"] == "plain"
+    assert model_health(task_dir, task="academic")["backup_bundle"] == "weak-backup"
+    (task_dir / "classifier.joblib").write_bytes(b"corrupt")
+    rescued = analyze("Assignment 2 must be submitted today.",
+                      model_path=task_dir / "classifier.joblib")
+    assert rescued["model_health"] == "verified"
+    assert rescued["model_bundle_id"] == "weak-backup"
+    assert rescued["category"] == "assignments"
+    assert model_health(task_dir, task="academic")["activation_kind"] == "bundle_fallback"

@@ -1,5 +1,32 @@
 # Build progress
 
+## DATA-06 reviewed pilot handoff — 29 October 2026
+
+Added a private finalization gate for two independent pilot reviews and explicit
+adjudication. It publishes development labels only after complete validation;
+the pinned guide and blank forms remain unchanged. Synthetic finalization
+checks and the portable Python suite passed (284 tests, one private research
+test deselected). The real forms still have no human-completed labels, so
+DATA-06 and reviewed accuracy evaluation remain open. See
+[handoff](dataset/ANNOTATION_HANDOFF.md) and
+[finalization progress](reports/DATA06_FINALIZATION_PROGRESS.md).
+
+## Desktop navigation verification — 29 October 2026
+
+Guarded page refreshes against stale responses and refreshed the current page
+after successful mutations. The isolated real Electron/Python notice-to-assignment
+workflow passed three consecutive runs; six desktop unit tests and the frontend
+build passed. This verifies the user flow, not model accuracy.
+
+## Local trained models active — 29 October 2026
+
+Plain academic and actionability models from the accepted development split
+are active; verified versioned bundles are standby fallbacks. A clear category
+rule overrides conflicting predictions from these unreviewed weak models.
+Temporary-profile API ingestion and the real Electron workflow passed, and
+the desktop remains open. No reviewed accuracy gain is claimed. See
+[local activation evidence](reports/LOCAL_MODEL_ACTIVATION_20261029.md).
+
 ## Portable launch and recorded verification — 28 October 2026
 
 The Electron backend lifecycle now fails promptly on bad spawn/exit, validates

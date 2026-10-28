@@ -12,6 +12,7 @@ __pycache__/
 !/dataset/RESEARCH_SCHEMA.md
 !/dataset/LEAKAGE_GROUPING.md
 !/dataset/ANNOTATION_GUIDE.md
+!/dataset/ANNOTATION_HANDOFF.md
 !/dataset/RUNTIME_EVAL_MAPPING.md
 !/dataset/tools/
 runtime/

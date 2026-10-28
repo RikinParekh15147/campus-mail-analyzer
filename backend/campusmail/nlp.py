@@ -8,7 +8,7 @@ from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from .preprocessing import prepare_document, prepare_body, PREPROCESSING_VERSION
 from .candidates import ANALYSIS_SCHEMA_VERSION
-from .model_registry import resolve_active_model
+from .model_registry import resolve_runtime_model
 
 MONTHS = {
     name: i
@@ -79,11 +79,13 @@ RULES = {
 
 
 def load_pipeline(path, modified):
-    """Load only the active verified bundle for the requested model task."""
+    """Load only an explicitly activated, checksum-verified local model."""
     task_dir = Path(path).parent
-    actual, manifest = resolve_active_model(task_dir, task=task_dir.name)
+    actual, manifest = resolve_runtime_model(task_dir, task=task_dir.name)
     model = _load_verified_pipeline(str(actual), manifest["files"]["classifier.joblib"])
-    return VerifiedPipeline(model, manifest["model_revision"], actual.parent.name)
+    bundle = actual.parent.name if manifest["activation_kind"].startswith("bundle") else None
+    return VerifiedPipeline(model, manifest["model_revision"], bundle,
+                            manifest["activation_kind"])
 
 
 @lru_cache(maxsize=4)
@@ -105,14 +107,16 @@ def _load_verified_pipeline(path, artifact_sha256):
 class VerifiedPipeline:
     model: object
     revision: str
-    bundle: str
+    bundle: str | None
+    activation_kind: str
 
     def predict(self, inputs):
         return self.model.predict(inputs)
 
     @property
     def _campus_bundle_identity(self):
-        return {"revision": self.revision, "bundle": self.bundle}
+        return {"revision": self.revision, "bundle": self.bundle,
+                "activation_kind": self.activation_kind}
 
 
 @dataclass(frozen=True)
@@ -299,6 +303,7 @@ def analyze(text, subject="", reference_date=None, model_path=None, source_timez
         (k for k, v in RULES.items() if re.search(v, prepared.classifier_text, re.I)),
         "nonacademic_other",
     )
+    rule_category = category
     method = "local_rules"
     model_status = "rules_only"
     model_revision = "local_rules"
@@ -315,6 +320,12 @@ def analyze(text, subject="", reference_date=None, model_path=None, source_timez
             if identity:
                 model_revision = identity["revision"]
                 model_bundle_id = identity["bundle"]
+                if (identity["activation_kind"] == "plain"
+                    or identity["revision"].startswith("weak-")) and (
+                    rule_category != "nonacademic_other"
+                    and proposed != rule_category):
+                    category = rule_category
+                    method = "local_rules_model_disagreement"
         except Exception:
             model_status = "invalid_or_unavailable"
     result = {

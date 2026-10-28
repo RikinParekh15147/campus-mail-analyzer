@@ -162,8 +162,8 @@ def diagnose(project=PROJECT, require_datasets=False):
         "guidance": [
             "Use the project virtual environment and rerun setup if dependency/import checks fail.",
             "Missing datasets are optional for development; use --require-datasets for research preflight.",
-            "Only an active pinned and verified academic bundle is loaded; otherwise classification uses local rules.",
-            "Legacy model files and matching metadata are unverified and are not loaded.",
+            "Only an explicitly activated, checksum-verified academic model is loaded; otherwise classification uses local rules.",
+            "Unactivated model files and matching metadata are not loaded.",
             "No credential vault, provider API, dataset content or environment secrets were read.",
         ],
     }

@@ -78,7 +78,8 @@ def main():
                         + log.read_text()[-8000:]
                     )
                 analysis = notice.json()["analysis"]
-                if analysis["classification_method"] == "self_trained_pipeline":
+                if analysis["classification_method"] in (
+                    "self_trained_pipeline", "local_rules_model_disagreement"):
                     assert analysis["model_health"] == "verified"
                 else:
                     assert analysis["classification_method"] == "local_rules"

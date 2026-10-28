@@ -517,7 +517,7 @@ def create_app(data_dir=None, bootstrap_key=None, worker=False, project_root=Non
 
     @app.get("/models")
     def models(account=Depends(owner)):
-        from .model_registry import model_health, resolve_active_model
+        from .model_registry import model_health, resolve_runtime_model
 
         reports = {}
         for task in ("academic", "actionability"):
@@ -525,7 +525,7 @@ def create_app(data_dir=None, bootstrap_key=None, worker=False, project_root=Non
             health = model_health(task_dir, task=task)
             if health["status"] == "verified":
                 try:
-                    path, _ = resolve_active_model(task_dir, task=task)
+                    path, _ = resolve_runtime_model(task_dir, task=task)
                     metrics = json.loads((path.parent / "metrics.json").read_text())
                     if not isinstance(metrics, dict):
                         raise ValueError("Model metrics must be an object")

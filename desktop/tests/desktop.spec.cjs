@@ -22,6 +22,8 @@ test("desktop provides a real isolated Python workflow", async () => {
   try {
     const page = await desktop.firstWindow();
     await page.waitForLoadState();
+    const screenshotDir = path.join(root, "artifacts/screenshots");
+    await fs.mkdir(screenshotDir, { recursive: true });
     await page
       .getByPlaceholder("What should we call you?")
       .fill("Demo Student");
@@ -42,10 +44,12 @@ test("desktop provides a real isolated Python workflow", async () => {
       .getByRole("dialog")
       .getByRole("button", { name: "Analyze notice" })
       .click();
+    await expect(page.getByText("Notice analyzed.")).toBeVisible();
     await page.locator(".nav-item").filter({ hasText: "Assignments" }).click();
     await expect(
       page.getByRole("heading", { name: "NLP201 Assignment 2", exact: true }),
     ).toBeVisible();
+    await page.screenshot({ path: path.join(screenshotDir, "assignments.png"), fullPage: true });
     await page.locator(".nav-item").filter({ hasText: "Profile" }).click();
     await page.getByRole("button", { name: "Add a confirmed detail" }).click();
     await page.getByRole("dialog").locator("input").nth(0).fill("roll_number");
@@ -97,6 +101,7 @@ test("desktop provides a real isolated Python workflow", async () => {
     await expect(page.getByRole("dialog")).toContainText(
       "Nothing has moved yet",
     );
+    await page.screenshot({ path: path.join(screenshotDir, "calendar-proposal.png"), fullPage: true });
     await page.getByRole("button", { name: "Approve this change" }).click();
     await expect(page.locator(".quiet-state")).toContainText(
       "No known conflicts",
@@ -116,12 +121,12 @@ test("desktop provides a real isolated Python workflow", async () => {
         .filter({ hasText: new RegExp("^" + screen) })
         .click();
       await expect(page.locator(".page-heading h1")).toBeVisible();
+      if (screen === "Models") {
+        await page.screenshot({ path: path.join(screenshotDir, "models.png"), fullPage: true });
+      }
     }
-    await fs.mkdir(path.join(root, "artifacts/screenshots"), {
-      recursive: true,
-    });
     await page.screenshot({
-      path: path.join(root, "artifacts/screenshots/dashboard.png"),
+      path: path.join(screenshotDir, "dashboard.png"),
       fullPage: true,
     });
   } finally {

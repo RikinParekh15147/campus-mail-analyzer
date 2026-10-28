@@ -18,6 +18,7 @@ BUNDLE_SCHEMA_VERSION = "model-bundle-v1"
 DEPENDENCIES = ("numpy", "scipy", "scikit-learn", "joblib")
 ARTIFACTS = ("classifier.joblib", "metrics.json")
 POINTER_SCHEMA_VERSION = "model-pointer-v1"
+PLAIN_SCHEMA_VERSION = "plain-model-activation-v1"
 _BUNDLE_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}\Z")
 
 
@@ -53,7 +54,7 @@ def _taxonomy(task):
     if task == "academic":
         return list(CATEGORIES)
     if task == "actionability":
-        return [False, True]
+        return ["False", "True"]
     raise ValueError("Unknown model task")
 
 
@@ -214,14 +215,134 @@ def resolve_active_model(task_dir, *, task):
     return _verify_entry(task_dir, task, pointer["active"])
 
 
+def _plain_activation(task_dir, task):
+    task_dir = Path(task_dir)
+    path = task_dir / "plain_active.json"
+    if not path.exists():
+        return None
+    if path.stat().st_size > 4096:
+        raise ValueError("Plain model activation is too large")
+    try:
+        value = json.loads(_regular(path).read_text(encoding="utf-8"),
+                           object_pairs_hook=_unique_keys, parse_constant=_reject_constant)
+    except (ValueError, UnicodeDecodeError):
+        raise ValueError("Invalid plain model activation") from None
+    if (not isinstance(value, dict) or set(value) != {
+        "schema_version", "task", "model_revision", "classifier_sha256",
+        "metrics_sha256", "preprocessing_version", "sklearn_version",
+    } or value["schema_version"] != PLAIN_SCHEMA_VERSION
+        or value["task"] != task or value["preprocessing_version"] != PREPROCESSING_VERSION
+        or not isinstance(value["model_revision"], str)
+        or not value["model_revision"].startswith("plain-")
+        or any(not isinstance(value[key], str)
+               or not re.fullmatch(r"[0-9a-f]{64}", value[key])
+               for key in ("classifier_sha256", "metrics_sha256"))):
+        raise ValueError("Invalid plain model activation")
+    import sklearn
+
+    if value["sklearn_version"] != sklearn.__version__:
+        raise ValueError("Plain model dependency version mismatch")
+    metrics_path = _regular(task_dir / "metrics.json")
+    model_path = _regular(task_dir / "classifier.joblib")
+    if (_hash(metrics_path) != value["metrics_sha256"]
+        or _hash(model_path) != value["classifier_sha256"]):
+        raise ValueError("Plain model checksum mismatch")
+    metrics = _metrics(metrics_path)
+    if (metrics.get("preprocessing_version") != PREPROCESSING_VERSION
+        or metrics.get("sklearn_version") != sklearn.__version__
+        or metrics.get("selected") != "linear_svm"
+        or metrics.get("evaluation_scope") != "development_only_source_or_weak_labels"
+        or not isinstance(metrics.get("dataset_sha256"), str)):
+        raise ValueError("Plain model training metadata mismatch")
+    expected_labels = set(_taxonomy(task))
+    if set(metrics.get("labels", [])) != expected_labels:
+        raise ValueError("Plain model taxonomy mismatch")
+    return model_path, {"model_revision": value["model_revision"],
+                        "files": {"classifier.joblib": value["classifier_sha256"]},
+                        "activation_kind": "plain"}
+
+
+def activate_plain_model(task_dir, *, task):
+    """Explicitly activate locally trained plain files, without a model bundle."""
+    task_dir = Path(task_dir)
+    if task_dir.is_symlink() or not task_dir.is_dir():
+        raise ValueError("Model task directory is missing or symlinked")
+    if _pointer(task_dir)["active"] is not None:
+        raise ValueError("A bundle is already active")
+    _taxonomy(task)
+    import sklearn
+
+    metrics = _metrics(task_dir / "metrics.json")
+    if (metrics.get("preprocessing_version") != PREPROCESSING_VERSION
+        or metrics.get("sklearn_version") != sklearn.__version__
+        or metrics.get("selected") != "linear_svm"
+        or metrics.get("evaluation_scope") != "development_only_source_or_weak_labels"
+        or not isinstance(metrics.get("dataset_sha256"), str)
+        or set(metrics.get("labels", [])) != set(_taxonomy(task))):
+        raise ValueError("Plain model training metadata mismatch")
+    classifier = _regular(task_dir / "classifier.joblib")
+    value = {
+        "schema_version": PLAIN_SCHEMA_VERSION, "task": task,
+        "model_revision": "plain-" + _hash(classifier)[:24],
+        "classifier_sha256": _hash(classifier),
+        "metrics_sha256": _hash(task_dir / "metrics.json"),
+        "preprocessing_version": PREPROCESSING_VERSION,
+        "sklearn_version": sklearn.__version__,
+    }
+    _atomic_json(task_dir, "plain_active.json", value)
+    _plain_activation(task_dir, task)
+    return value
+
+
+def _atomic_json(directory, name, value):
+    descriptor, staged = tempfile.mkstemp(prefix=".activation-", dir=directory)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(value, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(staged, Path(directory) / name)
+    finally:
+        Path(staged).unlink(missing_ok=True)
+
+
+def resolve_runtime_model(task_dir, *, task):
+    """Use the active plain model, then a verified bundle if it is unavailable."""
+    task_dir = Path(task_dir)
+    if task_dir.is_symlink() or not task_dir.is_dir():
+        raise ValueError("Model task directory is missing or symlinked")
+    plain_error = None
+    try:
+        plain = _plain_activation(task_dir, task)
+    except (OSError, ValueError) as exc:
+        plain = None
+        plain_error = exc
+    if plain is not None:
+        return plain
+    path, manifest = resolve_active_model(task_dir, task=task)
+    return path, {**manifest, "activation_kind":
+                  "bundle_fallback" if plain_error else "bundle"}
+
+
 def model_health(task_dir, *, task):
     """Read-only health for diagnostics; no pickle deserialization."""
     try:
-        path, manifest = resolve_active_model(task_dir, task=task)
+        path, manifest = resolve_runtime_model(task_dir, task=task)
     except Exception as exc:
         return {"status": "rules_only", "reason": str(exc)}
-    return {"status": "verified", "model_revision": manifest["model_revision"],
-            "bundle": path.parent.name}
+    kind = manifest["activation_kind"]
+    health = {"status": "verified", "model_revision": manifest["model_revision"],
+              "activation_kind": kind,
+              "bundle": path.parent.name if kind.startswith("bundle") else None}
+    if kind == "plain":
+        try:
+            backup_path, _ = resolve_active_model(task_dir, task=task)
+            health["backup_bundle"] = backup_path.parent.name
+        except (OSError, ValueError):
+            health["backup_bundle"] = None
+    return health
 
 
 def _atomic_pointer(task_dir, pointer):

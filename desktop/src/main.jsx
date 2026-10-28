@@ -100,8 +100,10 @@ function App() {
     [week, setWeek] = useState(today()),
     [newName, setNewName] = useState(""),
     [jobCount, setJobCount] = useState(0),
-    [reviewLimit, setReviewLimit] = useState(6);
+    [reviewLimit, setReviewLimit] = useState(6),
+    [mutationEpoch, setMutationEpoch] = useState(0);
   const generation = useRef(0);
+  const refreshRun = useRef(0);
   const flash = (message) => {
     setToast(message);
     setTimeout(() => setToast(""), 4500);
@@ -131,9 +133,11 @@ function App() {
   };
   const refresh = async () => {
     const version = generation.current;
+    const run = ++refreshRun.current;
+    const current = () => version === generation.current && run === refreshRun.current;
     try {
       const board = await request("/dashboard");
-      if (version !== generation.current) return;
+      if (!current()) return;
       setDashboard(board);
       let rows = [],
         additional = {};
@@ -156,11 +160,11 @@ function App() {
         additional.connections = await request("/connections");
         additional.jobs = (await request("/records/job")).slice(-8).reverse();
       }
-      if (version !== generation.current) return;
+      if (!current()) return;
       setData(rows);
       setExtra(additional);
     } catch (e) {
-      if (version === generation.current) setError(e.message);
+      if (current()) setError(e.message);
     }
   };
   useEffect(() => {
@@ -171,11 +175,11 @@ function App() {
         .catch((e) => setError(e.message));
   }, []);
   useEffect(() => {
-    if (profile) {
-      setQuery("");
-      refresh();
-    }
+    if (profile) setQuery("");
   }, [profile, page, week]);
+  useEffect(() => {
+    if (profile) refresh();
+  }, [profile, page, week, mutationEpoch]);
   useEffect(() => {
     if (!profile) return;
     let last = "";
@@ -193,7 +197,7 @@ function App() {
   }, [profile, page, week]);
   const mutate = async (path, body, message) => {
     const value = await perform(() => request(path, "POST", body), message);
-    if (value) refresh();
+    if (value) setMutationEpoch((epoch) => epoch + 1);
     return value;
   };
   const feedback = (item, field, value) =>
@@ -1276,8 +1280,8 @@ function App() {
                 <div>
                   <strong>Model health and evaluation.</strong>
                   <p>
-                    Only pinned and verified model bundles are used for
-                    predictions. Otherwise the app uses local rules. Source
+                    Only explicitly activated and checksum-verified local models
+                    are used for predictions. Otherwise the app uses local rules. Source
                     label scores are preliminary until human review is complete.
                   </p>
                 </div>
@@ -1318,7 +1322,9 @@ function App() {
                   </div>}
                   <p className="small-muted">
                     {report.health?.status === "verified"
-                      ? "The active bundle passed taxonomy, version and checksum verification."
+                      ? report.health.backup_bundle
+                        ? `Active local model verified. Standby bundle: ${report.health.backup_bundle}.`
+                        : "The active model passed version and checksum verification."
                       : report.health?.reason || "No active bundle is installed."}
                   </p>
                 </section>

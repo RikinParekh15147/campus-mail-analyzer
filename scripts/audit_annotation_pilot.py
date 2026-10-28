@@ -94,13 +94,13 @@ def validate_form(row, pack_row, pack_ids, owner):
         "reply_state": row["reply_state"], "annotation_status": statuses,
     }
     try:
-        ResearchDocument.model_validate(document)
+        validated = ResearchDocument.model_validate(document)
     except ValueError as exc:
         # Do not print private text or the validation input in errors.
         locations = sorted({".".join(str(part) for part in error["loc"])
                             for error in exc.errors(include_input=False)}) if hasattr(exc, "errors") else []
         raise ValueError("Invalid annotation contract fields: " + ", ".join(locations[:10])) from None
-    return complete
+    return validated
 
 
 def audit_pilot(reservation_dir, pilot_dir, reviewer_a_path, reviewer_b_path,
@@ -134,10 +134,12 @@ def audit_pilot(reservation_dir, pilot_dir, reviewer_a_path, reviewer_b_path,
         counts = Counter()
         reviewer_ids = set()
         for review_id, value in values.items():
-            complete = validate_form(value, pack[review_id], set(pack), owner)
-            counts.update(complete)
+            validate_form(value, pack[review_id], set(pack), owner)
+            counts.update(value["complete_fields"])
             if value["reviewer_id"]:
                 reviewer_ids.add(value["reviewer_id"])
+        if len(reviewer_ids) > 1:
+            raise ValueError(f"{owner} must use one consistent human reviewer ID")
         forms[owner] = values
         reviewed[owner] = {"complete_task_counts": dict(counts),
                            "reviewer_ids": sorted(reviewer_ids),
@@ -163,7 +165,7 @@ def audit_pilot(reservation_dir, pilot_dir, reviewer_a_path, reviewer_b_path,
         if different:
             disputes.append({"review_id": review_id, "disputed_tasks": different,
                              "adjudicator_id": None, "reason": "",
-                             "final_decisions_recorded": False})
+                             "final_decisions_recorded": False, "decisions": {}})
     if queue_output is not None:
         if comparable["classification"] != manifest["pilot_rows"]:
             raise ValueError("Both reviewers must complete classification before adjudication queue publication")
