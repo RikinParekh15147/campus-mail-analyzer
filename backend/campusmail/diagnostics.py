@@ -9,6 +9,7 @@ import sys
 import tomllib
 
 from .paths import PROJECT
+from .model_registry import model_health
 
 DATASETS = {
     "academic": "dataset/mail/scoped_run/sanitized/documents.jsonl",
@@ -35,11 +36,15 @@ def inspect_assets(project, sklearn_version=None):
     models = {}
     for task in DATASETS:
         directory = project / "artifacts/models" / task
+        health = model_health(directory, task=task)
         row = {
             "path": f"artifacts/models/{task}/classifier.joblib",
             "status": "missing",
+            "bundle_health": health,
         }
-        if (directory / "classifier.joblib").is_file():
+        if health["status"] == "verified":
+            row["status"] = "verified"
+        if health["status"] != "verified" and (directory / "classifier.joblib").is_file():
             row["status"] = "metadata_missing_unverified"
             if (directory / "metrics.json").is_file():
                 try:
@@ -130,6 +135,11 @@ def diagnose(project=PROJECT, require_datasets=False):
         row["status"] in ("incompatible_metadata", "invalid_metadata")
         for row in assets["models"].values()
     )
+    errors |= any(
+        (Path(project) / "artifacts/models" / task / "active.json").exists()
+        and row["bundle_health"]["status"] != "verified"
+        for task, row in assets["models"].items()
+    )
     if require_datasets:
         errors |= any(row["status"] == "missing" for row in assets["datasets"].values())
     academic_status = assets["models"]["academic"]["status"]
@@ -148,14 +158,12 @@ def diagnose(project=PROJECT, require_datasets=False):
         "dependencies": dependencies,
         "imports": imports,
         **assets,
-        "mode": "rules_only"
-        if academic_status == "missing"
-        else "model_present_unverified",
+        "mode": "verified_model" if academic_status == "verified" else "rules_only",
         "guidance": [
             "Use the project virtual environment and rerun setup if dependency/import checks fail.",
             "Missing datasets are optional for development; use --require-datasets for research preflight.",
-            "Missing academic models use rules-only analysis; install trusted team artifacts or train on designated data.",
-            "Metadata matching does not verify pickle integrity, taxonomy or predictions. Model loading is not attempted.",
+            "Only an active pinned and verified academic bundle is loaded; otherwise classification uses local rules.",
+            "Legacy model files and matching metadata are unverified and are not loaded.",
             "No credential vault, provider API, dataset content or environment secrets were read.",
         ],
     }

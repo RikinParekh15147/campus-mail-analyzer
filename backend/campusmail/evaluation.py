@@ -1,6 +1,7 @@
 """Extraction evaluation, keeping weak-label agreement distinct from gold scores."""
 
 from .nlp import analyze
+from .preprocessing import prepare_document
 
 
 def evaluate_extraction(rows, reviewed_only=False):
@@ -9,11 +10,13 @@ def evaluate_extraction(rows, reviewed_only=False):
     for row in rows:
         if reviewed_only and not row.get("human_reviewed"):
             continue
-        if not row.get("text", "").strip():
+        prepared = prepare_document(row.get("subject", ""), row.get("text", ""))
+        if not prepared.body.canonical.strip():
             continue
         documents += 1
         reviewed += bool(row.get("human_reviewed"))
-        result = analyze(row["text"], row.get("subject", ""), row.get("sent_at"))
+        result = analyze(prepared.body.canonical, prepared.subject.canonical,
+                         row.get("sent_at"))
         for kind in ("dates", "actions"):
 
             def span(item):

@@ -13,6 +13,17 @@ def main():
     )
     doctor.add_argument("--project-root", type=Path, default=PROJECT)
     doctor.add_argument("--require-datasets", action="store_true")
+    profile = sub.add_parser("store", help="Inspect or migrate local profile storage")
+    profile_sub = profile.add_subparsers(dest="store_command", required=True)
+    migrate_store = profile_sub.add_parser("migrate")
+    migrate_store.add_argument("--database", type=Path, required=True)
+    migrate_store.add_argument("--apply", action="store_true")
+    migrate_store.add_argument("--backup", type=Path)
+    restore_store = profile_sub.add_parser("restore")
+    restore_store.add_argument("--backup", type=Path, required=True)
+    restore_store.add_argument("--output", type=Path, required=True)
+    restore_store.add_argument("--expected-sha256", required=True)
+    restore_store.add_argument("--apply", action="store_true")
     dataset = sub.add_parser(
         "dataset", help="Validate designated research inputs without changing them"
     )
@@ -96,6 +107,23 @@ def main():
         report = diagnose(args.project_root, args.require_datasets)
         print(json.dumps(report, indent=2))
         raise SystemExit(0 if report["status"] == "ok" else 1)
+    elif args.command == "store":
+        import sqlite3
+        from .storage_migration import migrate_store, restore_backup
+
+        try:
+            if args.store_command == "migrate":
+                report = migrate_store(args.database, apply=args.apply,
+                                       backup_path=args.backup)
+            else:
+                report = restore_backup(args.backup, args.output,
+                                        expected_sha256=args.expected_sha256,
+                                        apply=args.apply)
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            parser.error(f"Store operation failed ({type(exc).__name__}); "
+                         "check the database, backup path and checksum")
+        print(json.dumps(report, indent=2))
+        raise SystemExit(0)
     elif args.command == "dataset" and args.dataset_command in (
         "migrate-import-ids",
         "import-identities",

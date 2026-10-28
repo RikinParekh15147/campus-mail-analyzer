@@ -77,10 +77,13 @@ def main():
                         + "\n"
                         + log.read_text()[-8000:]
                     )
-                assert (
-                    notice.json()["analysis"]["classification_method"]
-                    == "self_trained_pipeline"
-                )
+                analysis = notice.json()["analysis"]
+                if analysis["classification_method"] == "self_trained_pipeline":
+                    assert analysis["model_health"] == "verified"
+                else:
+                    assert analysis["classification_method"] == "local_rules"
+                    assert analysis["model_health"] in (
+                        "rules_only", "invalid_or_unavailable")
                 prompt = requests.get(
                     base + "/prompts/timetable", headers=headers, timeout=10
                 )

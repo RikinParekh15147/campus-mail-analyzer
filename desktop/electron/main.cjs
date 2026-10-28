@@ -5,6 +5,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const net = require("node:net");
 const { validateRequest, safeExternal } = require("./security.cjs");
+const { backendCommand, waitForBackend, stopBackend } = require("./backend_lifecycle.cjs");
 let window,
   backend,
   base,
@@ -12,7 +13,6 @@ let window,
   backendError = "";
 const bootstrap = randomBytes(32).toString("hex");
 const root = path.resolve(__dirname, "../..");
-const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 async function freePort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
@@ -62,30 +62,22 @@ function handle(name, fn) {
 async function startBackend() {
   const port = await freePort();
   base = "http://127.0.0.1:" + port;
-  const executable = app.isPackaged
-    ? path.join(
-        process.resourcesPath,
-        "backend",
-        process.platform === "win32"
-          ? "campusmail-backend.exe"
-          : "campusmail-backend",
-      )
-    : process.env.CAMPUS_PYTHON ||
-      path.join(
-        root,
-        process.platform === "win32"
-          ? ".venv-win/Scripts/python.exe"
-          : ".venv/bin/python",
-      );
+  const command = backendCommand({
+    root,
+    resourcesPath: process.resourcesPath,
+    platform: process.platform,
+    packaged: app.isPackaged,
+    override: process.env.CAMPUS_PYTHON,
+  });
   const args = [
-    ...(app.isPackaged ? [] : ["-m", "campusmail"]),
+    ...command.prefixArgs,
     "serve",
     "--port",
     String(port),
     "--data-dir",
     process.env.CAMPUS_DATA_DIR || path.join(app.getPath("userData"), "data"),
   ];
-  backend = spawn(executable, args, {
+  backend = spawn(command.executable, args, {
     cwd: root,
     env: { ...process.env, CAMPUS_BOOTSTRAP_KEY: bootstrap },
     stdio: ["ignore", "pipe", "pipe"],
@@ -97,17 +89,17 @@ async function startBackend() {
   backend.on("error", (error) => {
     backendError = error.message;
   });
-  for (let n = 0; n < 150; n++) {
-    try {
-      if ((await fetch(base + "/health")).ok) return;
-    } catch {}
-    if (backend.exitCode !== null) break;
-    await pause(200);
+  try {
+    await waitForBackend(backend, base + "/health");
+  } catch (error) {
+    if (backend && backend.exitCode === null && backend.signalCode === null) {
+      try { backend.kill(); } catch {}
+    }
+    throw Error(
+      "Python backend could not start. Run the setup instructions. " +
+        error.message + " " + backendError,
+    );
   }
-  throw Error(
-    "Python backend could not start. Run the setup instructions. " +
-      backendError,
-  );
 }
 app.whenReady().then(async () => {
   try {
@@ -253,6 +245,13 @@ app.whenReady().then(async () => {
   }
 });
 app.on("window-all-closed", () => app.quit());
-app.on("before-quit", () => {
-  if (backend) backend.kill();
+let stoppingBackend = false;
+app.on("before-quit", (event) => {
+  if (!backend || stoppingBackend) return;
+  event.preventDefault();
+  stoppingBackend = true;
+  stopBackend(backend).finally(() => {
+    backend = null;
+    app.quit();
+  });
 });

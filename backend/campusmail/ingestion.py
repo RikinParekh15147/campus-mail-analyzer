@@ -1,20 +1,31 @@
 import base64
+from email.message import Message
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from email.utils import getaddresses
 from urllib.parse import quote
 from pathlib import Path
-from .documents import VisibleText
+from .documents import VisibleText, text_quality, decode_bytes
 from .dataset_import import (
     import_dataset as import_dataset,
     _dataset_source_key as _dataset_source_key,
 )
 
 
-def decode(data):
-    return base64.urlsafe_b64decode(data + "=" * ((-len(data)) % 4)).decode(
-        "utf-8", errors="replace"
+def decode(data, charset=None):
+    raw = base64.urlsafe_b64decode(data + "=" * ((-len(data)) % 4))
+    return decode_bytes(raw, charset)
+
+
+def part_charset(part):
+    content_type = next(
+        (header.get("value", "") for header in part.get("headers", [])
+         if header.get("name", "").lower() == "content-type"),
+        part.get("mimeType", ""),
     )
+    header = Message()
+    header["content-type"] = content_type
+    return header.get_content_charset()
 
 
 def parse_message(raw):
@@ -23,6 +34,7 @@ def parse_message(raw):
     plain = []
     markup = []
     attachments = []
+    decoding_warnings = []
 
     def walk(part):
         body = part.get("body", {})
@@ -34,13 +46,19 @@ def parse_message(raw):
                     "inline_data": body.get("data"),
                     "mime_type": part.get("mimeType"),
                     "size": body.get("size"),
+                    "charset": part_charset(part),
                 }
             )
         elif body.get("data"):
-            if part.get("mimeType") == "text/html":
-                markup.append(decode(body["data"]))
-            elif part.get("mimeType") == "text/plain":
-                plain.append(decode(body["data"]))
+            mime_type = part.get("mimeType", "").split(";", 1)[0].lower()
+            if mime_type in ("text/html", "text/plain"):
+                decoded, warning = decode(body["data"], part_charset(part))
+                if warning:
+                    decoding_warnings.append(warning)
+                if mime_type == "text/html":
+                    markup.append(decoded)
+                else:
+                    plain.append(decoded)
         for child in part.get("parts", []):
             walk(child)
 
@@ -51,6 +69,11 @@ def parse_message(raw):
         parser = VisibleText()
         parser.feed("\n".join(markup))
         text = "".join(parser.parts)
+    quality = text_quality(text)
+    text_status = (
+        "needs_text_review" if decoding_warnings or quality["status"] != "usable"
+        else "usable"
+    )
     received = None
     try:
         if raw.get("internalDate"):
@@ -72,6 +95,9 @@ def parse_message(raw):
         "thread_id": raw.get("threadId"),
         "subject": headers.get("subject", ""),
         "text": text,
+        "text_quality": quality,
+        "text_quality_status": text_status,
+        "decoding_warnings": sorted(set(decoding_warnings)),
         "sent_at": stamp.isoformat() if stamp else None,
         "received_at": received.isoformat() if received else None,
         "relative_reference_trusted": authored is not None,

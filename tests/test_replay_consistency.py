@@ -47,6 +47,36 @@ def test_identical_attachment_bytes_keep_parent_occurrences_and_dates(tmp_path):
     assert len(store.list(owner, "message")) == 4
 
 
+def test_same_blob_keeps_distinct_provider_items_under_one_parent(tmp_path):
+    store, owner, engine = setup(tmp_path)
+    parent = store.put(owner, "message", {
+        "subject": "Assignment 2", "text": "See both files.",
+        "sent_at": "2026-10-01T09:00:00+05:30",
+    }, "parent")
+    content = b"Assignment 2 must submit by tomorrow."
+    first = engine.attach(owner, content, "first.txt", parent["id"], "item-a")
+    second = engine.attach(owner, content, "second.txt", parent["id"], "item-b")
+    assert first["id"] == second["id"]
+    children = [store.get(owner, item_id) for item_id in second["analysis_message_ids"]]
+    assert {(child["source_filename"], child["attachment_occurrence_id"])
+            for child in children} == {("first.txt", "item-a"),
+                                      ("second.txt", "item-b")}
+    engine.attach(owner, content, "first.txt", parent["id"], "item-a")
+    assert len(store.list(owner, "message")) == 3
+    assert len(store.list(owner, "resource")) == 1
+
+
+def test_invalid_attachment_parent_creates_no_blob_or_resource(tmp_path):
+    store, owner, engine = setup(tmp_path)
+    from campusmail.store import NotFound
+    import pytest
+
+    with pytest.raises(NotFound):
+        engine.attach(owner, b"Must submit by tomorrow.", "notice.txt", "missing")
+    assert not store.list(owner, "resource")
+    assert not (tmp_path / "blobs" / owner).exists()
+
+
 def test_rescheduled_assignment_replay_cancels_old_pending_reminders(tmp_path):
     store, owner, engine = setup(tmp_path)
     engine.fact(owner, "enrollment:NLP201", True, "confirmed", True)

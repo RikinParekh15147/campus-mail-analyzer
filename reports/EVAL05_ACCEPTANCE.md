@@ -27,8 +27,9 @@ and tamper rejection. The portable suite passed 200 tests with one private-data
 test deselected. `ruff check` on changed Python files and `git diff --check`
 passed. The CLI help entry point succeeded.
 
-The current-code ephemeral synthetic fixture run ID is
-`53702c8fa7e8020052c85a39` (the ID changed after FIX-02/03 updated `nlp.py`);
+At the EVAL-05 acceptance snapshot, the ephemeral synthetic fixture run ID was
+`535c718aaba5277e8b9701cc` (later PIPE-02 preprocessing changes intentionally
+produce a new run identity);
 its input SHA-256 was `93459ddd1ffb38e165bcb284cd5c23613d302059a3b54dbe8e5929d72ec1e151`
 and selection SHA-256 was
 `7664b7356e0d1b3c1e5586d7986ad36604e169c53fc0a6ea5d2e3b0e3972b657`.

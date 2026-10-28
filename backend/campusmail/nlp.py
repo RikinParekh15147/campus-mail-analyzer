@@ -6,6 +6,9 @@ from pathlib import Path
 import re
 from functools import lru_cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from .preprocessing import prepare_document, prepare_body, PREPROCESSING_VERSION
+from .candidates import ANALYSIS_SCHEMA_VERSION
+from .model_registry import resolve_active_model
 
 MONTHS = {
     name: i
@@ -75,11 +78,41 @@ RULES = {
 }
 
 
-@lru_cache(maxsize=4)
 def load_pipeline(path, modified):
+    """Load only the active verified bundle for the requested model task."""
+    task_dir = Path(path).parent
+    actual, manifest = resolve_active_model(task_dir, task=task_dir.name)
+    model = _load_verified_pipeline(str(actual), manifest["files"]["classifier.joblib"])
+    return VerifiedPipeline(model, manifest["model_revision"], actual.parent.name)
+
+
+@lru_cache(maxsize=4)
+def _load_verified_pipeline(path, artifact_sha256):
+    from hashlib import sha256
     import joblib
 
-    return joblib.load(path)
+    with open(path, "rb") as stream:
+        digest = sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+        if digest.hexdigest() != artifact_sha256:
+            raise ValueError("Model changed before deserialization")
+        stream.seek(0)
+        return joblib.load(stream)
+
+
+@dataclass(frozen=True)
+class VerifiedPipeline:
+    model: object
+    revision: str
+    bundle: str
+
+    def predict(self, inputs):
+        return self.model.predict(inputs)
+
+    @property
+    def _campus_bundle_identity(self):
+        return {"revision": self.revision, "bundle": self.bundle}
 
 
 @dataclass(frozen=True)
@@ -99,20 +132,33 @@ class TextSpan:
 
 
 ABBREVIATIONS = {
-    "dr", "prof", "mr", "mrs", "ms", "fig", "no", "vs", "etc", "dept",
+    "dr", "prof", "mr", "mrs", "ms", "fig", "no", "vs", "dept",
 }
-CLAUSE_BREAK = re.compile(r";|,\s*but\b|\bbut\b", re.I)
+CLAUSE_BREAK = re.compile(
+    r";|,\s*but\b|\bbut\b"
+    r"|\band\s+(?=(?:(?:you|students?|we)\s+)?(?:must|should|please)\b)", re.I,
+)
 URL = re.compile(r"https?://[^\s<>\"']+", re.I)
+
+
+def authored_text(text):
+    """Return source-aligned authored text from the shared preprocessor."""
+    return prepare_body(text).canonical
+
+
+def _url_ranges(text):
+    ranges = []
+    for match in URL.finditer(text):
+        end = match.end()
+        while end > match.start() and text[end - 1] in ".,;!?)":
+            end -= 1
+        ranges.append((match.start(), end))
+    return ranges
 
 
 def sentences(text):
     """Return source-aligned sentence spans without splitting URLs or decimals."""
-    urls = []
-    for match in URL.finditer(text):
-        end = match.end()
-        while end > match.start() and text[end - 1] in ".,;!?":
-            end -= 1
-        urls.append((match.start(), end))
+    urls = _url_ranges(text)
     result = []
     left = 0
     url_index = 0
@@ -154,7 +200,7 @@ def clauses(sentence):
     """Split contrasting obligations while retaining canonical body offsets."""
     result = []
     left = sentence.start()
-    url_ranges = [(match.start(), match.end()) for match in URL.finditer(sentence.group())]
+    url_ranges = _url_ranges(sentence.group())
     for match in CLAUSE_BREAK.finditer(sentence.group()):
         if any(start <= match.start() < end for start, end in url_ranges):
             continue
@@ -224,8 +270,10 @@ def _date_ranges(text):
 
 
 def analyze(text, subject="", reference_date=None, model_path=None, source_timezone=None):
+    prepared = prepare_document(subject, text)
+    text = prepared.body.canonical
     if not text.strip():
-        raise ValueError("Notice text is empty")
+        raise ValueError("Notice has no authored text")
     if isinstance(reference_date, str):
         try:
             reference_date = datetime.fromisoformat(
@@ -248,19 +296,35 @@ def analyze(text, subject="", reference_date=None, model_path=None, source_timez
             reference_date = None
             invalid_source_timezone = True
     category = next(
-        (k for k, v in RULES.items() if re.search(v, subject + " " + text, re.I)),
+        (k for k, v in RULES.items() if re.search(v, prepared.classifier_text, re.I)),
         "nonacademic_other",
     )
     method = "local_rules"
-    if model_path and Path(model_path).is_file():
-        model = load_pipeline(str(model_path), Path(model_path).stat().st_mtime_ns)
-        category, method = (
-            str(model.predict([subject + " " + text])[0]),
-            "self_trained_pipeline",
-        )
+    model_status = "rules_only"
+    model_revision = "local_rules"
+    model_bundle_id = None
+    if model_path:
+        try:
+            model = load_pipeline(str(model_path), None)
+            proposed = str(model.predict([prepared.classifier_text])[0])
+            from .models import CATEGORIES
+            if proposed not in CATEGORIES:
+                raise ValueError("Model returned a category outside the taxonomy")
+            category, method, model_status = proposed, "self_trained_pipeline", "verified"
+            identity = getattr(model, "_campus_bundle_identity", None)
+            if identity:
+                model_revision = identity["revision"]
+                model_bundle_id = identity["bundle"]
+        except Exception:
+            model_status = "invalid_or_unavailable"
     result = {
         "category": category,
         "classification_method": method,
+        "model_health": model_status,
+        "model_revision": model_revision,
+        "model_bundle_id": model_bundle_id,
+        "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
+        "preprocessing_version": PREPROCESSING_VERSION,
         "dates": [],
         "date_ranges": [],
         "subject_dates": [],

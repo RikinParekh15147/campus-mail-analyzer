@@ -12,13 +12,14 @@ import tempfile
 from pydantic import ValidationError
 
 from ..nlp import analyze
+from ..preprocessing import PREPROCESSING_VERSION
 from .contracts import ResearchDocument
 from .development_protocol import ACCEPTED_RESERVATION, verify_development_selection
 from .files import file_sha256, jsonl_records
 from .metrics import evaluate_reviewed_components
 from .validation import _reject_constant, _unique_keys
 
-CODE_FILES = ("nlp.py", "models.py", "research/contracts.py",
+CODE_FILES = ("nlp.py", "candidates.py", "preprocessing.py", "models.py", "research/contracts.py",
               "research/development_protocol.py", "research/files.py",
               "research/metrics.py", "research/source_policy.py",
               "research/validation.py", "research/experiment.py")
@@ -116,7 +117,7 @@ def run_rules_experiment(input_path, manifest_path, output_root, private_root,
         "fixture_mode": fixture_mode,
         "research_schema_version": "2.0",
         "selection_schema_version": schema_version,
-        "preprocessing_version": "nlp-rules-source-spans-v1",
+        "preprocessing_version": PREPROCESSING_VERSION,
         "dependency_spec_sha256": dependency_spec_hash,
         "python": ".".join(map(str, sys.version_info[:3])),
         "dependencies": dependencies, "pipeline": "rules_only_v1",

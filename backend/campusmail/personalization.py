@@ -2,6 +2,7 @@ from datetime import date
 import re
 from .store import Conflict
 from .reconciliation import align_date_times
+from .candidates import confirmed_origin
 
 ALLOWED = {
     "importance": {"high", "medium", "low"},
@@ -70,6 +71,10 @@ class Personalizer:
             {
                 **date_changes,
                 "overrides": {**record.get("overrides", {}), field: value},
+                "field_evidence": {
+                    **record.get("field_evidence", {}),
+                    field: confirmed_origin(record_id, value),
+                },
                 **({"status": "confirmed"} if record["kind"] == "profile_fact" else {}),
                 **(
                     {"state": "resolved"}

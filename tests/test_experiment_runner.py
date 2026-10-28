@@ -118,5 +118,5 @@ def test_run_identity_includes_fixture_mode_and_rejects_bad_seed(tmp_path):
     assert identity["fixture_mode"] is True
     assert len(identity["code_sha256"]) == 64
     assert len(identity["dependency_spec_sha256"]) == 64
-    assert identity["preprocessing_version"] == "nlp-rules-source-spans-v1"
+    assert identity["preprocessing_version"] == "source-blocks-v1"
     assert identity["dependencies"]["scikit-learn"]

@@ -5,20 +5,22 @@ import json
 from pathlib import Path
 
 from .research.files import file_sha256, jsonl_records
+from .preprocessing import prepare_document, PREPROCESSING_VERSION
 from .research.source_policy import (
     SPLIT_POLICY_VERSION, SPLIT_SEED, expected_split, require_source,
 )
 
 
-def load_rows(path):
+def load_rows(path, *, include_channels=False):
     rows = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
         d = json.loads(line)
         label = d.get("label", d.get("primary_category"))
         if label is None or str(label).lower() in ("null", "unknown", "none"):
             continue
-        text = d.get("subject", "") + " " + d.get("text", "")
-        if len(text.strip()) < 5:
+        prepared = prepare_document(d.get("subject", ""), d.get("text", ""))
+        text = prepared.classifier_text
+        if not prepared.body.canonical.strip() or len(text) < 5:
             continue
         rows.append(
             {
@@ -28,12 +30,17 @@ def load_rows(path):
                 or d.get("duplicate_group_id")
                 or d.get("thread_id")
                 or hashlib.sha256(text.encode()).hexdigest(),
+                **({"subject_text": prepared.subject.canonical,
+                    "body_text": prepared.body.canonical,
+                    "preprocessing_version": PREPROCESSING_VERSION}
+                   if include_channels else {}),
             }
         )
     return rows
 
 
-def load_reserved_development_rows(root, task, source_name, reservation_dir, input_run, component_run):
+def load_reserved_development_rows(root, task, source_name, reservation_dir,
+                                   input_run, component_run, *, include_channels=False):
     """Load weak-label training rows only from the frozen development allocation.
 
     The reservation is private and pinned to its upstream export. This loader
@@ -112,10 +119,15 @@ def load_reserved_development_rows(root, task, source_name, reservation_dir, inp
         label = document.get("primary_category") if task == "academic" else document.get("actionability_label")
         if label is None:
             continue
-        body = f"{document.get('subject', '')} {document['text']}".strip()
-        if len(body) < 5:
+        prepared = prepare_document(document.get("subject", ""), document["text"])
+        body = prepared.classifier_text
+        if not prepared.body.canonical.strip() or len(body) < 5:
             continue
-        rows.append({"text": body, "label": str(label), "group": guard})
+        rows.append({"text": body, "label": str(label), "group": guard,
+                     **({"subject_text": prepared.subject.canonical,
+                         "body_text": prepared.body.canonical,
+                         "preprocessing_version": PREPROCESSING_VERSION}
+                        if include_channels else {})})
     if identities:
         raise ValueError("Membership has rows absent from research export")
     return rows
@@ -181,6 +193,7 @@ def train_models(rows, output):
         "models": {},
         "label_warning": "Source/weak labels; not an independently reviewed gold evaluation",
         "sklearn_version": sklearn.__version__,
+        "preprocessing_version": PREPROCESSING_VERSION,
         "dataset_sha256": hashlib.sha256(
             json.dumps(rows, sort_keys=True).encode()
         ).hexdigest(),

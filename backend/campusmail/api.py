@@ -517,13 +517,25 @@ def create_app(data_dir=None, bootstrap_key=None, worker=False, project_root=Non
 
     @app.get("/models")
     def models(account=Depends(owner)):
-        return {
-            task: json.loads(p.read_text())
-            for task in ("academic", "actionability")
-            if (
-                p := services.project / "artifacts/models" / task / "metrics.json"
-            ).exists()
-        }
+        from .model_registry import model_health, resolve_active_model
+
+        reports = {}
+        for task in ("academic", "actionability"):
+            task_dir = services.project / "artifacts/models" / task
+            health = model_health(task_dir, task=task)
+            if health["status"] == "verified":
+                try:
+                    path, _ = resolve_active_model(task_dir, task=task)
+                    metrics = json.loads((path.parent / "metrics.json").read_text())
+                    if not isinstance(metrics, dict):
+                        raise ValueError("Model metrics must be an object")
+                    reports[task] = {**metrics, "health": health}
+                except (OSError, ValueError):
+                    reports[task] = {"health": {"status": "rules_only",
+                                                 "reason": "Model metrics are unreadable"}}
+            else:
+                reports[task] = {"health": health}
+        return reports
 
     @app.get("/updates")
     def updates(account=Depends(owner)):

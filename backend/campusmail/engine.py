@@ -2,7 +2,12 @@ from pathlib import Path
 import hashlib
 import re
 from .nlp import analyze, sentences
+from .preprocessing import prepare_document, PREPROCESSING_VERSION
 from .documents import read_document
+from .candidates import (
+    ANALYSIS_SCHEMA_VERSION, adapt_legacy_analysis, source_assertion,
+    confirmed_origin, span_assertion,
+)
 from .reconciliation import align_date_times
 from datetime import datetime, time, date, timezone
 from zoneinfo import ZoneInfo
@@ -40,7 +45,22 @@ CANCEL_BREAK = re.compile(
 
 def cancellation_clauses(context):
     """Keep contrastive and newly named items in separate local clauses."""
-    return [part.strip() for part in CANCEL_BREAK.split(context) if part.strip()]
+    return [part for _, _, part in cancellation_clause_spans(context)]
+
+
+def cancellation_clause_spans(context, offset=0):
+    """Return exact source offsets for the same clauses used by targeting."""
+    boundaries = [0] + [m.end() for m in CANCEL_BREAK.finditer(context)]
+    ends = [m.start() for m in CANCEL_BREAK.finditer(context)] + [len(context)]
+    clauses = []
+    for left, right in zip(boundaries, ends):
+        fragment = context[left:right]
+        leading = len(fragment) - len(fragment.lstrip())
+        trailing = len(fragment.rstrip())
+        if leading < trailing:
+            start, end = offset + left + leading, offset + left + trailing
+            clauses.append((start, end, context[left + leading:left + trailing]))
+    return clauses
 
 
 def cancellation_signal(context):
@@ -197,9 +217,20 @@ class Engine:
             payload = align_date_times(payload, field, value)
             if field not in ("date", "due_date"):
                 payload[field] = value
+            payload.setdefault("field_evidence", {})[field] = confirmed_origin(
+                old["id"], value)
         return payload
 
-    def fact(self, owner, field, value, evidence_id, confirmed=False):
+    def fact(self, owner, field, value, evidence_id, confirmed=False,
+             source_span=None):
+        source_evidence = None
+        if source_span is not None:
+            message = self.store.get(owner, evidence_id)
+            if message["kind"] != "message":
+                raise ValueError("Profile evidence source must be a message")
+            source_evidence = span_assertion(
+                evidence_id, message["text"], "profile." + field, value,
+                source_span[0], source_span[1])
         old = next(
             (f for f in self.store.list(owner, "profile_fact") if f["field"] == field),
             None,
@@ -234,6 +265,16 @@ class Engine:
         )
         if old and old["status"] == "confirmed" and old["value"] == value:
             status = "confirmed"
+        field_evidence = source_evidence
+        if old and old.get("status") == "confirmed" and old.get("value") == value:
+            field_evidence = old.get("field_evidence", {}).get("value") or source_evidence
+        if field_evidence is None and old and old.get("value") == value:
+            field_evidence = old.get("field_evidence", {}).get("value")
+        if field_evidence is None:
+            field_evidence = {
+                "origin": "confirmed_input" if confirmed else "legacy_unverified",
+                "source_id": evidence_id, "value": value,
+            }
         result = self.store.put(
             owner,
             "profile_fact",
@@ -242,6 +283,7 @@ class Engine:
                 "value": value,
                 "status": status,
                 "evidence_ids": evidence,
+                "field_evidence": {"value": field_evidence},
             },
             field,
         )
@@ -258,7 +300,9 @@ class Engine:
         return result
 
     def resource(self, owner, payload, key):
-        if payload.get("text", "").strip():
+        if (payload.get("text", "").strip()
+            and payload.get("status") not in
+                ("needs_text_review", "needs_ocr_or_review", "unreadable")):
             analysis = analyze(payload["text"])
             text_hash = hashlib.sha256(
                 " ".join(payload["text"].casefold().split()).encode()
@@ -303,8 +347,18 @@ class Engine:
                 payload["redundancy"] = "exact_duplicate"
         return self.store.put(owner, "resource", payload, key)
 
-    def attach(self, owner, data, filename, parent_id=None):
-        result = read_document(data, filename)
+    def attach(self, owner, data, filename, parent_id=None, occurrence_id=None,
+               charset=None):
+        parent = self.store.get(owner, parent_id) if parent_id else {}
+        if parent and parent["kind"] != "message":
+            raise ValueError("Attachment parent must be a message")
+        result = read_document(data, filename, charset)
+        if occurrence_id and parent_id:
+            legacy_key = "attachment:" + result["sha256"] + ":parent:" + parent_id
+            if any(m["source_key"] == legacy_key
+                   and m.get("legacy_provider_identity_unresolved")
+                   for m in self.store.list(owner, "message")):
+                raise ValueError("Legacy attachment provider identity needs review")
         path = None
         if self.blob_dir:
             directory = self.blob_dir / owner
@@ -317,15 +371,11 @@ class Engine:
         )
         record = self.resource(owner, result, "blob:" + result["sha256"])
         if result["status"] == "readable":
-            subject = (
-                self.store.get(owner, parent_id).get("subject", filename)
-                if parent_id
-                else filename
-            )
-            parent = self.store.get(owner, parent_id) if parent_id else {}
+            subject = parent.get("subject", filename)
             occurrence_key = (
                 "attachment:" + record["sha256"]
                 + (":parent:" + parent_id if parent_id else ":standalone")
+                + (":item:" + str(occurrence_id) if occurrence_id else "")
             )
             old_child = next(
                 (m for m in self.store.list(owner, "message")
@@ -345,6 +395,10 @@ class Engine:
                     "text": result["text"],
                     "subject": subject,
                     "source_type": "uploaded_attachment",
+                    "source_filename": filename,
+                    "source_charset": charset,
+                    "source_locators": result.get("locators", []),
+                    "attachment_occurrence_id": occurrence_id,
                     "parent_record_id": parent_id,
                     "sent_at": parent.get("sent_at"),
                     "timezone": parent.get("timezone"),
@@ -390,9 +444,31 @@ class Engine:
         if message["owner_id"] != owner:
             raise ValueError("Message owner mismatch")
         full = message.get("text", "")
-        text = re.split(
-            r"\n(?:On .{5,180}wrote:|[- ]*Original Message|From:)", full, maxsplit=1
-        )[0]
+        if message.get("text_quality_status") == "needs_text_review":
+            result = {"category": "unknown", "dates": [], "subject_dates": [],
+                      "actions": [], "resources": [], "courses": [],
+                      "reason": "Source text decoding needs review",
+                      "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
+                      "preprocessing_version": PREPROCESSING_VERSION}
+            self.store.patch(owner, message["id"], {"analysis": result})
+            self.review(owner, "text-quality:" + message["id"],
+                        "Check this message's decoded text before using its dates or actions",
+                        message["id"], context={"message_id": message["id"]})
+            return result
+        prepared = prepare_document(
+            message.get("subject", ""), full,
+            source_type="attachment" if message.get("source_type") == "uploaded_attachment"
+            else "body",
+        )
+        text = prepared.body.canonical
+        if not text.strip():
+            result = {"category": "unknown", "dates": [], "subject_dates": [],
+                      "actions": [], "resources": [], "courses": [],
+                      "reason": "No authored email text outside quoted history",
+                      "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
+                      "preprocessing_version": prepared.version}
+            self.store.patch(owner, message["id"], {"analysis": result})
+            return result
         subject = message.get("subject", "")
         trusted = message.get("relative_reference_trusted")
         if trusted is None:
@@ -409,15 +485,22 @@ class Engine:
             action_model = (
                 Path(self.model_path).parent.parent / "actionability/classifier.joblib"
             )
-            if action_model.is_file():
+            try:
                 from .nlp import load_pipeline
 
-                labels = load_pipeline(
-                    str(action_model), action_model.stat().st_mtime_ns
-                ).predict([a["text"] for a in result["actions"]])
+                action_pipeline = load_pipeline(str(action_model), None)
+                labels = action_pipeline.predict([a["text"] for a in result["actions"]])
+                if not all(str(label) in ("True", "False") for label in labels):
+                    raise ValueError("Actionability model returned an invalid label")
                 for action, label in zip(result["actions"], labels):
                     action["trained_actionability"] = str(label)
                     action["method"] = "local_rules_with_trained_actionability"
+                identity = getattr(action_pipeline, "_campus_bundle_identity", None)
+                if identity:
+                    result["actionability_model_revision"] = identity["revision"]
+                    result["actionability_model_bundle_id"] = identity["bundle"]
+            except Exception:
+                result["actionability_model_health"] = "invalid_or_unavailable"
         for extracted in result["dates"] + result["subject_dates"]:
             correction_key = (
                 "subject:" + str(extracted["start"])
@@ -433,13 +516,23 @@ class Engine:
                     role=correction["role"],
                     needs_review=False,
                     reason=None,
+                    correction_method="user_confirmed",
                 )
+        body_locators = list(message.get("source_locators", []))
+        if message.get("source_type") == "uploaded_attachment":
+            if not body_locators:
+                for resource_id in message.get("attachment_resource_ids", []):
+                    resource = self.store.get(owner, resource_id)
+                    body_locators.extend(resource.get("locators", []))
+        result = adapt_legacy_analysis(message["id"], full, subject, result,
+                                       body_locators)
         for match in re.finditer(
             r"\b(?:your|my)\s+roll\s*(?:number|no\.?)\s*(?:is|:)?\s*([A-Za-z0-9-]{5,20})",
             text,
             re.I,
         ):
-            self.fact(owner, "roll_number", match.group(1).upper(), message["id"])
+            self.fact(owner, "roll_number", match.group(1).upper(), message["id"],
+                      source_span=match.span(1))
         for field, pattern in [
             ("program", r"\b(?:your|my) program(?:me)?\s*(?:is|:)\s*([^\n.]{2,70})"),
             (
@@ -454,11 +547,13 @@ class Engine:
             ),
         ]:
             for match in re.finditer(pattern, text, re.I):
-                self.fact(owner, field, match.group(1).strip(), message["id"])
+                self.fact(owner, field, match.group(1).strip(), message["id"],
+                          source_span=match.span(1))
         for match in re.finditer(
             r"\b(?:you are|I am) enrolled in\s+([A-Z]{2,5}[- ]?\d{3})", text
         ):
-            self.fact(owner, "enrollment:" + match.group(1), True, message["id"])
+            self.fact(owner, "enrollment:" + match.group(1), True, message["id"],
+                      source_span=match.span(1))
         profile = self.profile(owner)
         for name in profile:
             if name.startswith("enrollment:"):
@@ -747,8 +842,11 @@ class Engine:
                 target_key = old["source_key"]
             cancellation_targeted = False
             cancellation_ambiguous = False
+            cancellation_evidence = None
             for left, right in spec["spans"]:
-                for context in cancellation_clauses(text[left:right]):
+                for clause_start, clause_end, context in cancellation_clause_spans(
+                    text[left:right], left
+                ):
                     signal = cancellation_signal(context)
                     if signal == "none":
                         continue
@@ -760,11 +858,17 @@ class Engine:
                         cancellation_ambiguous = True
                     elif mentioned_numbers == {assignment_number} and assignment_number:
                         cancellation_targeted = True
+                        cancellation_evidence = span_assertion(
+                            message["id"], full, "assignment.status", "cancelled",
+                            clause_start, clause_end)
                     elif (len(task_keys) == 1 and not mentioned_numbers
                           and re.search(r"\b(?:assignment|homework|project)\b",
                                         context, re.I)
                           and (assignment_number is not None or old is not None)):
                         cancellation_targeted = True
+                        cancellation_evidence = span_assertion(
+                            message["id"], full, "assignment.status", "cancelled",
+                            clause_start, clause_end)
                     else:
                         cancellation_ambiguous = True
             dates = [
@@ -840,13 +944,20 @@ class Engine:
                 )
             field_source_at = dict((old or {}).get("field_source_at", {}))
             field_source_id = dict((old or {}).get("field_source_id", {}))
+            field_evidence = dict((old or {}).get("field_evidence", {}))
             if old is None:
                 field_source_at["status"] = source_at
             if dates and not date_stale and not date_tie:
                 field_source_at["due_date"] = source_at
                 field_source_id["due_date"] = message["id"]
+                selected = dates[-1]
+                group = "subject_dates" if selected.get("field") == "subject" else "dates"
+                field_evidence["due_date"] = source_assertion(
+                    result, group, "normalized", selected)
             if cancellation_targeted and not self.field_stale(old, "status", source_at):
                 field_source_at["status"] = source_at
+                field_source_id["status"] = message["id"]
+                field_evidence["status"] = cancellation_evidence
             if date_stale or date_tie:
                 due_date = old.get("due_date")
                 due_at = old.get("due_at")
@@ -866,6 +977,7 @@ class Engine:
                 "due_date": due_date,
                 "field_source_at": field_source_at,
                 "field_source_id": field_source_id,
+                "field_evidence": field_evidence,
                 "date_precision": "date",
                 "importance": (old or {}).get("importance", "high"),
                 "relevance": "applicable" if course_known else "uncertain",
@@ -940,8 +1052,10 @@ class Engine:
             )
         )
         for sentence in sentences(text):
-            for context in cancellation_clauses(sentence.group()):
-                event_names.extend((match.group(1), context)
+            for clause_start, clause_end, context in cancellation_clause_spans(
+                sentence.group(), sentence.start()
+            ):
+                event_names.extend((match.group(1), context, clause_start, clause_end)
                                    for match in EVENT_NAME.finditer(context))
         if not event_names and re.search(
             r"\b(meeting|workshop|seminar|webinar|exam|examination|event)\b",
@@ -954,9 +1068,11 @@ class Engine:
                     re.sub(r"^(?:Re:|Fwd:)\s*", "", subject, flags=re.I)
                     or "Academic event",
                     text,
+                    0,
+                    len(text),
                 )
             ]
-        for title, context in event_names:
+        for title, context, context_start, context_end in event_names:
             local = analyze(context, reference_date=relative_anchor,
                             source_timezone=message.get("timezone"))
             cancellation_kind = cancellation_signal(context)
@@ -964,12 +1080,13 @@ class Engine:
             event_cancelled = (
                 cancellation_kind == "positive"
                 and not fallback_event_name
-                and sum(1 for _, related_context in event_names if related_context == context) == 1
+                and sum(1 for _, related_context, _, _ in event_names
+                        if related_context == context) == 1
             )
             subject_date_used = False
-            event_date = next(
+            event_date_candidate = next(
                 (
-                    d["normalized"]
+                    d
                     for d in result["dates"]
                     if d["text"] in context
                     and d["role"] in ("event_start", "exam_date")
@@ -977,15 +1094,16 @@ class Engine:
                 ),
                 None,
             )
-            if event_date is None and len(event_names) == 1:
+            if event_date_candidate is None and len(event_names) == 1:
                 subject_candidates = [
                     d for d in result["subject_dates"]
                     if d["normalized"] and d["role"] in ("event_start", "exam_date")
                     and not d["needs_review"]
                 ]
                 if len(subject_candidates) == 1:
-                    event_date = subject_candidates[0]["normalized"]
+                    event_date_candidate = subject_candidates[0]
                     subject_date_used = True
+            event_date = (event_date_candidate or {}).get("normalized")
             base = (
                 (course or "")
                 + (":term:" + term.replace(" ", "_") if term else "")
@@ -1111,14 +1229,22 @@ class Engine:
                 )
             field_source_at = dict((old or {}).get("field_source_at", {}))
             field_source_id = dict((old or {}).get("field_source_id", {}))
+            field_evidence = dict((old or {}).get("field_evidence", {}))
             if old is None:
                 field_source_at["status"] = source_at
             if date_asserted and not date_stale and not date_tie:
                 field_source_at["date"] = source_at
                 field_source_id["date"] = message["id"]
+                group = "subject_dates" if subject_date_used else "dates"
+                field_evidence["date"] = source_assertion(
+                    result, group, "normalized", event_date_candidate)
             status_stale = self.field_stale(old, "status", source_at)
             if event_cancelled and not status_stale:
                 field_source_at["status"] = source_at
+                field_source_id["status"] = message["id"]
+                field_evidence["status"] = span_assertion(
+                    message["id"], full, "event.status", "cancelled",
+                    context_start, context_end)
             if date_stale or date_tie:
                 event_date = old.get("date")
             compulsory = not unrelated and bool(
@@ -1174,6 +1300,7 @@ class Engine:
                     ),
                     "field_source_at": field_source_at,
                     "field_source_id": field_source_id,
+                    "field_evidence": field_evidence,
                     "description": context,
                     "importance": (old or {}).get(
                         "importance", "high" if compulsory else "medium"

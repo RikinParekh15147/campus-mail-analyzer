@@ -16,6 +16,7 @@ from .google import GoogleConnection, GoogleHTTP
 from .external_calendar import CalendarSync
 
 from .paths import PROJECT
+from .candidates import ANALYSIS_SCHEMA_VERSION
 
 
 class Application:
@@ -70,6 +71,7 @@ class Application:
                 {
                     "analysis": {
                         "category": "unknown",
+                        "analysis_schema_version": ANALYSIS_SCHEMA_VERSION,
                         "dates": [],
                         "actions": [],
                         "resources": [],
@@ -80,6 +82,8 @@ class Application:
             )
             return
         self.engine.process(owner, message)
+        if message.get("text_quality_status") == "needs_text_review":
+            return
         if (
             message.get("sanitized")
             and message.get("source_type")
@@ -172,8 +176,10 @@ class Application:
         self.process(owner, message)
         return self.store.get(owner, message["id"])
 
-    def attach(self, owner, data, filename, parent_id=None):
-        resource = self.engine.attach(owner, data, filename, parent_id)
+    def attach(self, owner, data, filename, parent_id=None, occurrence_id=None,
+               charset=None):
+        resource = self.engine.attach(owner, data, filename, parent_id, occurrence_id,
+                                      charset)
         if resource.get("analysis_message_id"):
             self.process(owner, self.store.get(owner, resource["analysis_message_id"]))
         return resource
@@ -258,7 +264,8 @@ class Application:
                         encoded + "=" * ((-len(encoded)) % 4)
                     )
                     resource = self.attach(
-                        owner, data, attachment["filename"], message["id"]
+                        owner, data, attachment["filename"], message["id"],
+                        attachment.get("provider_id"), attachment.get("charset"),
                     )
                     self.store.put(
                         owner,
@@ -342,6 +349,12 @@ class Application:
     def reprocess(self, owner, payload):
         for message in self.store.list(owner, "message"):
             self.process(owner, message)
+        for resource in self.store.list(owner, "resource"):
+            legacy = resource.get("content_analysis", {})
+            if (isinstance(legacy, dict) and legacy.get("requires_reanalysis")
+                and resource.get("status") == "readable"
+                and resource.get("text", "").strip()):
+                self.engine.resource(owner, resource, resource["source_key"])
         self.reminders.refresh(owner)
 
     def recover_message(self, owner, payload):

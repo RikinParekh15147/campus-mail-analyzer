@@ -32,6 +32,9 @@ def test_intermediate_assignment_correction_survives_later_info_and_replay(tmp_p
     assignment = store.list(owner, "assignment")[0]
     assert assignment["due_date"] == "2026-10-28"
     assert assignment["field_source_at"]["due_date"] == correction["sent_at"]
+    evidence = assignment["field_evidence"]["due_date"]
+    assert evidence["evidence"]["document_id"] == correction["id"]
+    assert evidence["value"] == assignment["due_date"]
 
 
 def test_event_manual_date_and_status_survive_replay_with_conflict(tmp_path):
@@ -54,6 +57,10 @@ def test_event_manual_date_and_status_survive_replay_with_conflict(tmp_path):
     assert resolved["date"] == "2026-10-27"
     assert resolved["status"] == "cancelled"
     assert resolved["relevance"] == "unrelated"
+    assert resolved["field_evidence"]["date"] == {
+        "origin": "user_confirmed", "record_id": event["id"],
+        "value": "2026-10-27",
+    }
     assert any(q.get("field") == "date" and q.get("status") == "open"
                for q in store.list(owner, "review"))
 
@@ -73,6 +80,9 @@ def test_intermediate_event_correction_survives_later_info(tmp_path):
     event = store.list(owner, "event")[0]
     assert event["date"] == "2026-10-28"
     assert event["field_source_at"]["date"] == correction["sent_at"]
+    evidence = event["field_evidence"]["date"]
+    assert evidence["evidence"]["document_id"] == correction["id"]
+    assert evidence["value"] == event["date"]
 
 
 def test_manual_date_moves_stored_times_and_calendar_day(tmp_path):

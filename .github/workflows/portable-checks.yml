@@ -32,29 +32,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/setup.ps1 -Python python -BackendOnly
-      - name: Verify and record macOS environment
-        if: runner.os == 'macOS'
-        run: |
-          mkdir -p artifacts/verification
-          git rev-parse HEAD > artifacts/verification/commit.txt
-          .venv/bin/python -m pip freeze > artifacts/verification/freeze.txt
-          .venv/bin/python -m campusmail doctor > artifacts/verification/doctor.json
-          .venv/bin/python -m pytest -q --junitxml=artifacts/verification/pytest.xml
-      - name: Verify and record Windows environment
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force artifacts/verification
-          git rev-parse HEAD > artifacts/verification/commit.txt
-          ./.venv-win/Scripts/python.exe -m pip freeze > artifacts/verification/freeze.txt
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./.venv-win/Scripts/python.exe -m campusmail doctor > artifacts/verification/doctor.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          ./.venv-win/Scripts/python.exe -m pytest -q --junitxml=artifacts/verification/pytest.xml
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - run: npm --prefix desktop ci
-      - run: npm --prefix desktop test
-      - run: npm --prefix desktop run build
+      - name: Verify portable workflow and record evidence
+        shell: bash
+        run: python scripts/verify_portable.py --desktop-workflow
       - uses: actions/upload-artifact@v4
         if: always()
         with:

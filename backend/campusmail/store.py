@@ -25,9 +25,11 @@ def now():
 class Store:
     def __init__(self, path):
         self.path = str(Path(path).resolve())
+        new_database = not Path(self.path).exists()
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
-            db.executescript("""
+            if new_database:
+                db.executescript("""
                 CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS records(
                   id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
@@ -39,8 +41,16 @@ class Store:
                   record_id TEXT NOT NULL, owner_id TEXT NOT NULL, revision INTEGER NOT NULL,
                   payload TEXT NOT NULL, created_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS sessions(token_hash TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id));
-                PRAGMA user_version=1;
-            """)
+                """)
+                db.execute("PRAGMA user_version=2")
+            else:
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version not in (1, 2):
+                    raise ValueError("Unsupported profile schema version")
+                tables = {row[0] for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'")}
+                if not {"users", "records", "revisions", "sessions"} <= tables:
+                    raise ValueError("Profile database is missing required tables")
 
     @contextmanager
     def connect(self):

@@ -1274,11 +1274,11 @@ function App() {
               <div className="notice-box">
                 <BrainCircuit size={20} />
                 <div>
-                  <strong>Self-trained, transparently evaluated.</strong>
+                  <strong>Model health and evaluation.</strong>
                   <p>
-                    Academic labels are provisional source annotations. These
-                    scores measure agreement with those labels, not a
-                    human-reviewed benchmark.
+                    Only pinned and verified model bundles are used for
+                    predictions. Otherwise the app uses local rules. Source
+                    label scores are preliminary until human review is complete.
                   </p>
                 </div>
               </div>
@@ -1292,12 +1292,18 @@ function App() {
                           : "SENTENCE ACTIONABILITY"}
                       </span>
                       <h2>
-                        {report.records.toLocaleString()} labeled examples
+                        {report.health?.status === "verified"
+                          ? `${(report.records || 0).toLocaleString()} labeled examples`
+                          : "Rules-only mode"}
                       </h2>
                     </div>
-                    <span className="tag green">Grouped holdout</span>
+                    <span className="tag green">
+                      {report.health?.status === "verified"
+                        ? `Verified: ${report.health.model_revision}`
+                        : "No verified model"}
+                    </span>
                   </div>
-                  <div className="model-bars">
+                  {report.models && <div className="model-bars">
                     {Object.entries(report.models).map(([name, score]) => (
                       <div className="model-bar" key={name}>
                         <strong>{titleCase(name)}</strong>
@@ -1309,11 +1315,11 @@ function App() {
                         </span>
                       </div>
                     ))}
-                  </div>
+                  </div>}
                   <p className="small-muted">
-                    TF-IDF fits on training data only. Exact duplicates and
-                    source groups stay in the same split. SVM is the predeclared
-                    deployment model.
+                    {report.health?.status === "verified"
+                      ? "The active bundle passed taxonomy, version and checksum verification."
+                      : report.health?.reason || "No active bundle is installed."}
                   </p>
                 </section>
               ))}

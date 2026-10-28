@@ -1,5 +1,101 @@
 # Build progress
 
+## Portable launch and recorded verification — 28 October 2026
+
+The Electron backend lifecycle now fails promptly on bad spawn/exit, validates
+its health response and waits for child shutdown. A unified verification
+command captures machine, commit, dirty-tree state, dependency versions and
+lock hashes alongside Python, bridge, build and desktop results. Mac run
+`20261028T151353Z-fedc5f8f` passed all checks: **280 Python tests**, six Node
+tests, frontend build and real desktop workflow. Windows CI is configured but
+has not run; ENV-04/01 remain open. See
+[portable launch progress](reports/ENV04_05_PROGRESS.md).
+
+## Verified model bundles and rollback accepted — 28 October 2026
+
+OPS-01/02 now use write-once model manifests, pinned active/previous pointers,
+atomic promotion and rollback, pre-load verification, visible health and
+rules-only fallback. No real model was promoted. The portable suite passed
+**279 tests**, with one private-data test deselected; frontend build, bridge
+tests, scoped lint and diff checks passed. See
+[bundle acceptance](reports/OPS01_ACCEPTANCE.md).
+
+## Bounded sparse comparison tooling — 28 October 2026
+
+Added the fixed CLS-02 candidate matrix, paired whole-guard fold scorer and a
+private immutable development runner. The reviewed wrapper enforces DATA-05
+custody and double-reviewed classification labels. Fixture checks pass, but
+DATA-06 has no completed human pilot forms, so no reviewed candidate comparison
+or model promotion has occurred. The portable suite passed **273 tests**, with
+one private-data test deselected; scoped lint and diff checks passed. See
+[comparison progress](reports/CLS02_PROGRESS.md).
+
+## Sparse feature candidates accepted — 28 October 2026
+
+Added independently selectable word, character and subject/body TF-IDF
+channels. Research loaders can retain separate prepared fields without
+changing the current default training path. Fixture tests verify fold-local
+vocabulary fitting and independent channel ablation. CLS-01 is accepted as
+tooling; reviewed comparison and promotion remain pending. The 270-test
+portable suite passed, with one private-data test deselected; lint passed.
+See [feature acceptance](reports/CLS01_ACCEPTANCE.md).
+
+## Backward-compatible profile migration accepted — 28 October 2026
+
+New profiles and analyses are versioned. A version 1 profile loads without
+schema writes; explicit dry-run migration identifies legacy analyses and
+attachment keys. Apply requires a fresh verified SQLite backup. Recovery
+restores to a new path after checksum and integrity checks. Fixture replay
+preserves a confirmed deadline, and ambiguous Gmail provider identity blocks
+duplicate reimport. PIPE-05 is accepted at fixture level; no live profile was
+migrated. The 267-test portable suite passed, with one private-data test
+deselected; lint passed. See [migration acceptance](reports/PIPE05_ACCEPTANCE.md).
+
+## Document layout and decoding accepted — 28 October 2026
+
+HTML table rows, DOCX document order, PDF page spans and XLSX row/cell spans
+now retain source offsets. MIME charset decoding and text-quality status
+explicitly stop poor text from creating automatic entities. Attachment
+occurrences keep their own locators, and validated date assertions point to
+the containing page or cell. PIPE-03 is accepted at fixture level; OCR and a
+corpus-wide format audit remain separate. The 263-test portable suite passed,
+with one private-data test deselected; lint passed. See
+[layout acceptance](reports/PIPE03_ACCEPTANCE.md).
+
+## Shared preprocessing accepted — 28 October 2026
+
+Training, extraction evaluation, research experiments and runtime now share
+`source-blocks-v1`: subject/body/attachment blocks, authored and contextual
+regions, and source-aligned canonical offsets. The model input is identical
+across training and inference; quote-only bodies do not train or score as
+authored extraction input. The experiment identity includes this version and
+its code. PIPE-02 is accepted at fixture level; OPS-01 still owns model bundle
+compatibility. The 258-test portable suite passed, with one private-data test
+deselected. See [preprocessing acceptance](reports/PIPE02_ACCEPTANCE.md).
+
+## Attachment occurrences and typed evidence accepted — 28 October 2026
+
+Byte-identical attachments retain parent-specific source dates and separate
+analysis messages; provider item IDs also distinguish repeated bytes under one
+parent. Runtime extraction now validates exact source spans and persists typed,
+versioned field assertions through a legacy adapter. PIPE-04 is accepted at
+fixture level. Assignment/event dates now link to the winning assertion;
+targeted cancellations and profile values carry exact spans, and manual edits
+carry a confirmed origin. PIPE-01 is accepted at fixture level; legacy storage
+migration remains PIPE-05. The 255-test portable suite passed; one private-data
+test was deselected. See
+[attachment acceptance](reports/PIPE04_ACCEPTANCE.md) and
+[evidence acceptance](reports/PIPE01_ACCEPTANCE.md).
+
+## Sentence and clause boundaries accepted — 28 October 2026
+
+Protected URL punctuation, decimals and abbreviations while splitting new
+explicit obligations after completed clauses. Quoted reply lines are masked
+without changing offsets, and quoted history cannot create entities.
+Eight focused tests and the 248-test portable suite passed; one
+private-data test was deselected. FIX-01 is accepted at fixture level. See
+[boundary acceptance](reports/FIX01_ACCEPTANCE.md).
+
 ## Cancellation targeting accepted — 28 October 2026
 
 Assignment and event cancellation now uses local clauses and named targets.
@@ -133,8 +229,8 @@ gain is claimed. See [identity acceptance](reports/FIX05_PROGRESS.md).
 Replaced punctuation-only sentence matching with source-aligned spans that
 preserve URLs, decimals and common abbreviations. Action rules now evaluate
 contrasting clauses separately so a completed action does not hide a later
-unfinished obligation. FIX-01 remains open for regression and real-data
-verification. See [boundary progress](reports/FIX01_PROGRESS.md).
+unfinished obligation. FIX-01 was still open at this stage; the later fixture
+acceptance appears above. See [boundary progress](reports/FIX01_PROGRESS.md).
 
 ## Assignment cancellation scoping increment — 28 October 2026
 
